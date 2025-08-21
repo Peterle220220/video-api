@@ -2,10 +2,9 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const transcodingService = require('../services/transcodingService');
-const Video = require('../models/Video');
-const TranscodedVideo = require('../models/TranscodedVideo');
 const { getCurrentCPUUsage, getCPUUsageHistory, getSystemInfo, getMemoryUsage } = require('../utils/cpuMonitor');
 const { authenticateToken } = require('../middleware/auth');
 
@@ -79,7 +78,7 @@ const upload = multer({
     }
 });
 
-// Start transcoding job
+// Start transcoding job (no DB)
 router.post('/start', authenticateToken, upload.single('video'), async (req, res) => {
     try {
         if (!req.file) {
@@ -91,19 +90,8 @@ router.post('/start', authenticateToken, upload.single('video'), async (req, res
         const filename = req.file.filename;
         const fileSize = req.file.size;
 
-        // Save video record to database
-        const video = new Video({
-            title: title || 'Untitled Video',
-            description: description || '',
-            filename,
-            original_path: videoPath,
-            size: fileSize,
-            user_id: req.user._id,
-            status: 'uploaded'
-        });
-
-        await video.save();
-        const videoId = video._id;
+        // Create an in-memory video id
+        const videoId = uuidv4();
 
         // Parse resolutions
         const resolutionList = resolutions ? JSON.parse(resolutions) : ['1920x1080', '1280x720', '854x480'];
@@ -117,13 +105,20 @@ router.post('/start', authenticateToken, upload.single('video'), async (req, res
                 console.error(`❌ Transcoding failed for video ${videoId}:`, error);
             });
 
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const urls = resolutionList.map(r => ({
+            resolution: r,
+            url: `${baseUrl}/processed/${videoId}/${r}.mp4`
+        }));
+
         res.json({
             success: true,
             message: 'Transcoding job started',
             videoId: videoId,
             filename: filename,
             resolutions: resolutionList,
-            status: 'processing'
+            status: 'processing',
+            urls
         });
 
     } catch (error) {
@@ -145,8 +140,16 @@ router.get('/status/:jobId', authenticateToken, async (req, res) => {
         // Get current CPU usage
         const cpuUsage = await getCurrentCPUUsage();
 
+        // Include URLs for expected outputs
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const urls = (jobStatus.resolutions || ['1920x1080', '1280x720', '854x480']).map(r => ({
+            resolution: r,
+            url: `${baseUrl}/processed/${jobStatus.video_id}/${r}.mp4`
+        }));
+
         res.json({
             job: jobStatus,
+            urls,
             currentCPUUsage: cpuUsage,
             timestamp: new Date().toISOString()
         });
@@ -223,14 +226,13 @@ router.get('/metrics', authenticateToken, async (req, res) => {
     }
 });
 
-// Get transcoded videos for a specific video
+// Get transcoded videos for a specific video (from in-memory store)
 router.get('/videos/:videoId/transcoded', authenticateToken, async (req, res) => {
     try {
         const { videoId } = req.params;
 
-        const transcodedVideos = await TranscodedVideo.find({ video_id: videoId })
-            .sort({ created_at: -1 })
-            .lean();
+        const transcodedVideos = (transcodingService.transcodedByVideoId.get(videoId) || [])
+            .sort((a, b) => b.created_at - a.created_at);
 
         res.json({
             videoId: videoId,
@@ -315,3 +317,46 @@ router.post('/test-cpu', authenticateToken, async (req, res) => {
 });
 
 module.exports = router;
+
+// List transcoded videos library
+router.get('/library', authenticateToken, async (req, res) => {
+    try {
+        const processedRoot = process.env.PROCESSED_PATH || './processed';
+        await fs.mkdir(processedRoot, { recursive: true });
+
+        const videoIds = (await fs.readdir(processedRoot, { withFileTypes: true }))
+            .filter(d => d.isDirectory())
+            .map(d => d.name);
+
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+        const items = [];
+        for (const videoId of videoIds) {
+            const folder = path.join(processedRoot, videoId);
+            const files = (await fs.readdir(folder)).filter(name => name.endsWith('.mp4'));
+            const resolutions = files.map(name => name.replace('.mp4', ''));
+            const urls = files.map(name => ({
+                resolution: name.replace('.mp4', ''),
+                url: `${baseUrl}/processed/${videoId}/${name}`
+            }));
+            const stats = fsSync.statSync(folder);
+            items.push({
+                videoId,
+                resolutions,
+                urls,
+                updatedAt: stats.mtime
+            });
+        }
+
+        // Sort by updated time desc
+        items.sort((a, b) => b.updatedAt - a.updatedAt);
+
+        res.json({
+            count: items.length,
+            videos: items
+        });
+    } catch (error) {
+        console.error('Error listing library:', error);
+        res.status(500).json({ error: 'Failed to list transcoded library' });
+    }
+});

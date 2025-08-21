@@ -3,9 +3,6 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const TranscodingJob = require('../models/TranscodingJob');
-const TranscodedVideo = require('../models/TranscodedVideo');
-const { getRedisClient } = require('../config/redis');
 const { getCurrentCPUUsage } = require('../utils/cpuMonitor');
 
 // Configure FFmpeg paths (auto-detect if env invalid or missing)
@@ -56,6 +53,8 @@ const { getCurrentCPUUsage } = require('../utils/cpuMonitor');
 class TranscodingService {
     constructor() {
         this.activeJobs = new Map();
+        this.jobs = new Map(); // jobId -> job data
+        this.transcodedByVideoId = new Map(); // videoId -> [transcoded items]
     }
 
     // Get video information
@@ -78,7 +77,7 @@ class TranscodingService {
 
         try {
             // Create job record
-            await this.createJobRecord(videoId, jobId);
+            await this.createJobRecord(videoId, jobId, resolutions);
 
             // Get video info
             const videoInfo = await this.getVideoInfo(inputPath);
@@ -117,13 +116,12 @@ class TranscodingService {
 
     // Transcode to specific resolution
     async transcodeToResolution(videoId, jobId, inputPath, resolution, totalDuration) {
-        const outputPath = path.join(
-            process.env.PROCESSED_PATH || './processed',
-            `${videoId}_${resolution.replace('x', '_')}.mp4`
-        );
+        const processedRoot = process.env.PROCESSED_PATH || './processed';
+        const videoFolder = path.join(processedRoot, videoId);
+        const outputPath = path.join(videoFolder, `${resolution}.mp4`);
 
-        // Ensure output directory exists
-        await fs.mkdir(path.dirname(outputPath), { recursive: true });
+        // Ensure output directory exists per video
+        await fs.mkdir(videoFolder, { recursive: true });
 
         return new Promise((resolve, reject) => {
             let progress = 0;
@@ -162,10 +160,6 @@ class TranscodingService {
                         // Monitor CPU usage during transcoding
                         const cpuUsage = await getCurrentCPUUsage();
                         console.log(`📊 ${resolution} - Progress: ${progress}%, CPU: ${cpuUsage}%`);
-
-                        // Store CPU usage in Redis
-                        const redisClient = getRedisClient();
-                        await redisClient.set(`transcoding_cpu:${jobId}:${resolution}`, cpuUsage);
                     }
                 })
                 .on('end', async () => {
@@ -199,61 +193,62 @@ class TranscodingService {
         });
     }
 
-    // Create job record in database
-    async createJobRecord(videoId, jobId) {
-        const job = new TranscodingJob({
+    // Create job record (in-memory)
+    async createJobRecord(videoId, jobId, resolutions = ['1920x1080', '1280x720', '854x480']) {
+        const job = {
             video_id: videoId,
             job_id: jobId,
             status: 'processing',
-            started_at: new Date()
-        });
-        await job.save();
+            progress: 0,
+            error_message: null,
+            created_at: new Date(),
+            started_at: new Date(),
+            completed_at: null,
+            resolutions
+        };
+        this.jobs.set(jobId, job);
     }
 
     // Update job status
     async updateJobStatus(jobId, status, progress, errorMessage = null) {
-        const updateData = {
-            status,
-            progress,
-            error_message: errorMessage
-        };
-
-        if (status === 'completed' || status === 'failed') {
-            updateData.completed_at = new Date();
+        const job = this.jobs.get(jobId);
+        if (!job) return;
+        job.status = status;
+        job.progress = progress;
+        job.error_message = errorMessage;
+        if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+            job.completed_at = new Date();
         }
-
-        await TranscodingJob.findOneAndUpdate(
-            { job_id: jobId },
-            updateData
-        );
+        this.jobs.set(jobId, job);
     }
 
     // Update job progress
     async updateJobProgress(jobId, progress) {
-        await TranscodingJob.findOneAndUpdate(
-            { job_id: jobId },
-            { progress }
-        );
+        const job = this.jobs.get(jobId);
+        if (!job) return;
+        job.progress = progress;
+        this.jobs.set(jobId, job);
     }
 
     // Save transcoded video record
     async saveTranscodedVideo(videoId, resolution, filePath, fileSize) {
-        const transcodedVideo = new TranscodedVideo({
+        const list = this.transcodedByVideoId.get(videoId) || [];
+        list.push({
             video_id: videoId,
             resolution,
             format: 'mp4',
             file_path: filePath,
             file_size: fileSize,
             status: 'completed',
+            created_at: new Date(),
             completed_at: new Date()
         });
-        await transcodedVideo.save();
+        this.transcodedByVideoId.set(videoId, list);
     }
 
     // Get job status
     async getJobStatus(jobId) {
-        const job = await TranscodingJob.findOne({ job_id: jobId }).lean();
-        return job;
+        return this.jobs.get(jobId) || null;
     }
 
     // Cancel transcoding job
@@ -269,21 +264,20 @@ class TranscodingService {
 
     // Get all active jobs
     async getActiveJobs() {
-        const jobs = await TranscodingJob.find({
-            status: { $in: ['pending', 'processing'] }
-        })
-            .sort({ created_at: -1 })
-            .lean();
+        const jobs = Array.from(this.jobs.values())
+            .filter(j => ['pending', 'processing'].includes(j.status))
+            .sort((a, b) => b.created_at - a.created_at);
         return jobs;
     }
 
     // Clean up completed jobs
     async cleanupCompletedJobs() {
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        await TranscodingJob.deleteMany({
-            status: { $in: ['completed', 'failed'] },
-            completed_at: { $lt: sevenDaysAgo }
-        });
+        for (const [jobId, job] of this.jobs.entries()) {
+            if (['completed', 'failed', 'cancelled'].includes(job.status) && job.completed_at && job.completed_at < sevenDaysAgo) {
+                this.jobs.delete(jobId);
+            }
+        }
     }
 }
 

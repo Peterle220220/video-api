@@ -194,9 +194,6 @@ export default function Videos() {
 					<input type="file" accept="video/*" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
 					<button type="submit" disabled={uploading || !uploadFile}>{uploading ? `Uploading ${uploadProgress}%` : 'Upload & Start'}</button>
 				</form>
-				{transcodeStatus !== 'idle' && (
-					<p style={{ marginTop: 8 }}>Transcoding: {transcodeProgress}% {transcodeStatus === 'completed' ? '(Done)' : ''}</p>
-				)}
 			</div>
 
 			<div className="video-card" style={{ marginBottom: 16 }}>
@@ -235,7 +232,7 @@ export default function Videos() {
 							return (
 								<div key={res} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
 									<span style={{ width: 10, height: 10, borderRadius: '50%', background: info.status === 'completed' ? '#16a34a' : info.status === 'processing' ? '#f59e0b' : '#9ca3af' }} />
-									<span>{label}: {info.status}</span>
+									<span>{label}: {info.status === 'completed' ? 'completed' : `${transcodeProgress}%`}</span>
 									{info.url && <a href={info.url} target="_blank" rel="noreferrer">Open</a>}
 								</div>
 							);
