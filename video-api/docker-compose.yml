@@ -14,6 +14,7 @@ services:
       - PROCESSED_PATH=./processed
       - MAX_FILE_SIZE=500MB
       - CPU_MONITORING_INTERVAL=1000
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
     ports:
       - "3000:3000"
     volumes:

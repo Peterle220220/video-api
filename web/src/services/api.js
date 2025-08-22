@@ -29,6 +29,7 @@ export const endpoints = {
         metrics: '/api/transcoding/metrics',
         metadata: (videoId, resolution) => `/api/transcoding/metadata/${videoId}/${resolution}`,
         deleteVideo: (videoId) => `/api/transcoding/videos/${videoId}`,
+        meta: (videoId) => `/api/transcoding/videos/${videoId}/meta`,
     },
     staticPaths: {
         processed: (filename) => `${apiBaseUrl}/processed/${filename}`,

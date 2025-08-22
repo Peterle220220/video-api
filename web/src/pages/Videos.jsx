@@ -26,6 +26,9 @@ export default function Videos() {
 	const [transcodeElapsedSec, setTranscodeElapsedSec] = useState(0);
 	const transcodeStartTsRef = useRef(null);
 	const [metaByUrl, setMetaByUrl] = useState({}); // {url: {sizeBytes, resolution, fps, duration, bitrate}}
+	const [aaiMetaByVideoId, setAaiMetaByVideoId] = useState({}); // {videoId: {status, summary, chapters, highlights, text}}
+	const aaiPollingRef = useRef(null);
+	const aaiPollingVideoIdRef = useRef('');
 
 	const formatBytes = (bytes) => {
 		if (!bytes && bytes !== 0) return '-';
@@ -97,6 +100,11 @@ export default function Videos() {
 			if (pollingRef.current) {
 				clearInterval(pollingRef.current);
 				pollingRef.current = null;
+			}
+			if (aaiPollingRef.current) {
+				clearInterval(aaiPollingRef.current);
+				aaiPollingRef.current = null;
+				aaiPollingVideoIdRef.current = '';
 			}
 		};
 	}, []);
@@ -288,6 +296,7 @@ export default function Videos() {
 				const byRes = new Map(initialUrls.map(u => [String(u.resolution), u.url]));
 				setResolutionStatuses(Object.fromEntries(expectedResolutions.map(r => [r, { status: 'processing', url: byRes.get(r) || null, progress: 0 }])));
 				startPollingTranscode();
+				startPollingMeta(videoId);
 			}
 		} catch (err) {
 			setError(err?.response?.data?.error || 'Upload failed');
@@ -329,6 +338,40 @@ export default function Videos() {
 	const onPreviewClick = async (videoId, url) => {
 		setSelectedPreview({ videoId, url });
 		await ensureMetaForUrl(url);
+		// fetch AssemblyAI meta and start polling if needed
+		try {
+			const res = await api.get(endpoints.transcoding.meta(videoId));
+			const m = res?.data?.meta || null;
+			if (m) setAaiMetaByVideoId((prev) => ({ ...prev, [videoId]: m }));
+			if (!m || (m.status && String(m.status).toLowerCase() !== 'completed' && String(m.status).toLowerCase() !== 'error')) {
+				startPollingMeta(videoId);
+			}
+		} catch (_) {
+			startPollingMeta(videoId);
+		}
+	};
+
+	const startPollingMeta = (videoId) => {
+		if (!videoId) return;
+		if (aaiPollingRef.current) {
+			clearInterval(aaiPollingRef.current);
+			aaiPollingRef.current = null;
+		}
+		aaiPollingVideoIdRef.current = videoId;
+		aaiPollingRef.current = setInterval(async () => {
+			try {
+				const res = await api.get(endpoints.transcoding.meta(aaiPollingVideoIdRef.current));
+				const m = res?.data?.meta || null;
+				if (m) setAaiMetaByVideoId((prev) => ({ ...prev, [aaiPollingVideoIdRef.current]: m }));
+				const status = String(m?.status || '').toLowerCase();
+				if (status === 'completed' || status === 'error') {
+					clearInterval(aaiPollingRef.current);
+					aaiPollingRef.current = null;
+				}
+			} catch (_) {
+				// keep polling; endpoint may not exist yet
+			}
+		}, 3000);
 	};
 
 	return (
@@ -407,12 +450,52 @@ export default function Videos() {
 												} catch (err) {
 													alert(err?.response?.data?.error || 'Failed to delete video');
 												}
-										}}
-									>
-										Delete
-									</button>
+											}}
+										>
+											Delete
+										</button>
 									)}
 								</div>
+								{aaiMetaByVideoId[item.videoId] && (
+									<div style={{ fontSize: 12, color: '#374151', background: '#f8fafc', padding: 8, borderRadius: 6 }}>
+										{(() => { const m = aaiMetaByVideoId[item.videoId] || {}; const st = String(m.status || '').toLowerCase(); return (
+											<div style={{ display: 'grid', gap: 6 }}>
+												<div>
+													<strong>Summary status:</strong> {st || 'unknown'}{st && st !== 'completed' && st !== 'error' ? ' (processing...)' : ''}
+												</div>
+												{m.summary && (
+													<div><strong>Summary:</strong> {m.summary}</div>
+												)}
+												{Array.isArray(m.chapters) && m.chapters.length > 0 && (
+													<div>
+														<strong>Chapters:</strong>
+														<ul style={{ margin: '4px 0 0 16px' }}>
+															{m.chapters.slice(0, 6).map((c, idx) => (
+																<li key={idx}>{c?.headline || c?.gist || `Chapter ${idx+1}`} {Number.isFinite(c?.start) && Number.isFinite(c?.end) ? `(${formatSeconds(c.start)} - ${formatSeconds(c.end)})` : ''}</li>
+															))}
+														</ul>
+													</div>
+												)}
+												{m.highlights && Array.isArray(m.highlights.results) && m.highlights.results.length > 0 && (
+													<div>
+														<strong>Highlights:</strong>
+														<ul style={{ margin: '4px 0 0 16px' }}>
+															{m.highlights.results.slice(0, 5).map((h, idx) => (
+																<li key={idx}>{h.text} {h.rank ? `(rank ${h.rank})` : ''}</li>
+															))}
+														</ul>
+													</div>
+												)}
+												{m.text && (
+													<details>
+														<summary>Transcript</summary>
+														<div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{m.text}</div>
+													</details>
+												)}
+											</div>
+										); })()}
+									</div>
+								)}
 								{selectedPreview.videoId === item.videoId && selectedPreview.url && (
 									<>
 										<video key={selectedPreview.url} controls crossOrigin="anonymous" width="100%">
@@ -457,28 +540,7 @@ export default function Videos() {
 					</div>
 				</div>
 			)}
-			{!loading && !error && (
-				<div className="video-grid">
-					{videos.length === 0 ? (
-						<p>No videos to display. Enter a videoId to load transcoded files.</p>
-					) : (
-						videos.map((v) => (
-							<div key={v.id} className="video-card">
-								<h4>{v.title || 'Untitled'}</h4>
-								<video key={v.streamUrl} controls crossOrigin="anonymous" width="100%">
-									<source src={v.streamUrl} type="video/mp4" />
-									Your browser does not support the video tag.
-								</video>
-								<div style={{ fontSize: 12, color: '#374151', marginTop: 4 }}>
-									{(() => { const meta = metaByUrl[v.streamUrl] || {}; return (
-										<span>Size: {formatBytes(meta.sizeBytes ?? v.fileSize)} — Resolution: {meta.resolution || v.resolution || v.title} {meta.fps ? `— FPS: ${meta.fps}` : meta.duration ? `— Duration: ${formatSeconds(meta.duration)}` : ''} {meta.bitrate ? `— Bitrate: ${(meta.bitrate/1000).toFixed(0)} kbps` : ''}</span>
-									); })()}
-								</div>
-							</div>
-						))
-					)}
-				</div>
-			)}
+			
 		</div>
 	);
 }
