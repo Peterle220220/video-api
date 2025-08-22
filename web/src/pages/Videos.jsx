@@ -52,21 +52,44 @@ export default function Videos() {
 	useEffect(() => {
 		// Probe auth quickly and load library
 		api.get(endpoints.auth.test).catch(() => {});
-		loadLibrary();
+		loadLibrary(1, libraryLimit);
 	}, []);
 
 	const [library, setLibrary] = useState([]);
+	const [libraryPage, setLibraryPage] = useState(1);
+	const [libraryLimit, setLibraryLimit] = useState(10);
+	const [libraryPagination, setLibraryPagination] = useState({ currentPage: 1, totalPages: 1, totalVideos: 0, hasNext: false, hasPrev: false });
 	const [selectedPreview, setSelectedPreview] = useState({ videoId: '', url: '' });
 	const user = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
 
-	const loadLibrary = async () => {
+	const loadLibrary = async (page = libraryPage, limit = libraryLimit) => {
 		try {
-			const { data } = await api.get(endpoints.transcoding.library);
+			const { data } = await api.get(endpoints.transcoding.library, { params: { page, limit } });
 			const list = Array.isArray(data?.videos) ? data.videos : [];
 			setLibrary(list);
+			const p = data?.pagination || {};
+			setLibraryPagination({
+				currentPage: p.currentPage || page,
+				totalPages: p.totalPages || 1,
+				totalVideos: (p.totalVideos ?? (data?.count ?? list.length ?? 0)),
+				hasNext: !!p.hasNext,
+				hasPrev: !!p.hasPrev,
+			});
+			setLibraryPage(p.currentPage || page);
+			setLibraryLimit(limit);
 		} catch (err) {
 			// ignore
 		}
+	};
+
+	const goToPrevPage = () => {
+		if (!libraryPagination.hasPrev) return;
+		loadLibrary((libraryPagination.currentPage || 1) - 1, libraryLimit);
+	};
+
+	const goToNextPage = () => {
+		if (!libraryPagination.hasNext) return;
+		loadLibrary((libraryPagination.currentPage || 1) + 1, libraryLimit);
 	};
 
 	useEffect(() => {
@@ -337,6 +360,30 @@ export default function Videos() {
 					<p>No transcoded videos in library.</p>
 				) : (
 					<div style={{ display: 'grid', gap: 12 }}>
+						<div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'space-between' }}>
+							<div style={{ fontSize: 12, color: '#374151' }}>
+								<span>Page {libraryPagination.currentPage} of {libraryPagination.totalPages}</span>
+								<span style={{ marginLeft: 8 }}>Total: {libraryPagination.totalVideos}</span>
+							</div>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+								<label style={{ fontSize: 12, color: '#374151' }}>Page size:</label>
+								<select
+									value={libraryLimit}
+									onChange={(e) => {
+										const next = parseInt(e.target.value, 10) || 10;
+										setLibraryLimit(next);
+										loadLibrary(1, next);
+									}}
+								>
+									<option value={5}>5</option>
+									<option value={10}>10</option>
+									<option value={20}>20</option>
+									<option value={50}>50</option>
+								</select>
+								<button onClick={goToPrevPage} disabled={!libraryPagination.hasPrev}>Prev</button>
+								<button onClick={goToNextPage} disabled={!libraryPagination.hasNext}>Next</button>
+							</div>
+						</div>
 						{library.map(item => (
 							<div key={item.videoId} style={{ display: 'grid', gap: 6 }}>
 								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

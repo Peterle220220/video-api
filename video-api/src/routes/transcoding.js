@@ -379,6 +379,11 @@ module.exports = router;
 // List transcoded videos library
 router.get('/library', authenticateToken, async (req, res) => {
     try {
+        const pageParam = req.query.page;
+        const limitParam = req.query.limit;
+        const page = Math.max(1, parseInt(pageParam || '1', 10) || 1);
+        const limit = Math.max(1, Math.min(100, parseInt(limitParam || '10', 10) || 10));
+
         const processedRoot = process.env.PROCESSED_PATH || './processed';
         await fs.mkdir(processedRoot, { recursive: true });
 
@@ -409,9 +414,24 @@ router.get('/library', authenticateToken, async (req, res) => {
         // Sort by updated time desc
         items.sort((a, b) => b.updatedAt - a.updatedAt);
 
+        const totalVideos = items.length;
+        const totalPages = Math.max(1, Math.ceil(totalVideos / limit));
+        const currentPage = Math.min(page, totalPages);
+        const start = (currentPage - 1) * limit;
+        const end = start + limit;
+        const pagedItems = items.slice(start, end);
+
         res.json({
-            count: items.length,
-            videos: items
+            count: totalVideos,
+            videos: pagedItems,
+            pagination: {
+                currentPage,
+                totalPages,
+                totalVideos,
+                limit,
+                hasNext: currentPage < totalPages,
+                hasPrev: currentPage > 1
+            }
         });
     } catch (error) {
         console.error('Error listing library:', error);
