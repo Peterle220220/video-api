@@ -1,10 +1,10 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import './styles/app.css';
-import Login from './pages/Login';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import ForgotPassword from './pages/ForgotPassword';
+import Login from './pages/Login';
 import Videos from './pages/Videos';
 import ProtectedRoute from './routes/ProtectedRoute';
+import './styles/app.css';
 
 function App() {
   return (

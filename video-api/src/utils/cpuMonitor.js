@@ -1,5 +1,4 @@
 const os = require('os');
-const { getRedisClient } = require('../config/redis');
 
 let cpuUsageHistory = [];
 let monitoringInterval = null;
@@ -53,11 +52,6 @@ function startCPUMonitoring() {
             if (cpuUsageHistory.length > 100) {
                 cpuUsageHistory.shift();
             }
-
-            // Store in Redis for persistence
-            const redisClient = getRedisClient();
-            await redisClient.set(`cpu_usage:${timestamp}`, cpuUsage);
-            await redisClient.expire(`cpu_usage:${timestamp}`, 3600); // Expire after 1 hour
 
             // Log high CPU usage
             if (cpuUsage > 80) {

@@ -5,10 +5,7 @@ const path = require('path');
 require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
-const videoRoutes = require('./routes/videos');
 const transcodingRoutes = require('./routes/transcoding');
-const { initializeDatabase } = require('./config/database');
-const { initializeRedis } = require('./config/redis');
 const { startCPUMonitoring } = require('./utils/cpuMonitor');
 const multer = require('multer');
 
@@ -27,7 +24,6 @@ app.use('/processed', express.static(path.join(__dirname, '../processed')));
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/videos', videoRoutes);
 app.use('/api/transcoding', transcodingRoutes);
 
 // Health check endpoint
@@ -70,14 +66,6 @@ app.use('*', (req, res) => {
 // Initialize and start server
 async function startServer() {
     try {
-        // Initialize database
-        await initializeDatabase();
-        console.log('✅ Database connected successfully');
-
-        // Initialize Redis
-        await initializeRedis();
-        console.log('✅ Redis connected successfully');
-
         // Start CPU monitoring
         startCPUMonitoring();
         console.log('✅ CPU monitoring started');
@@ -86,7 +74,6 @@ async function startServer() {
         app.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT}`);
             console.log(`📊 Health check: http://localhost:${PORT}/health`);
-            console.log(`🎥 Video API: http://localhost:${PORT}/api/videos`);
             console.log(`🔄 Transcoding API: http://localhost:${PORT}/api/transcoding`);
         });
     } catch (error) {

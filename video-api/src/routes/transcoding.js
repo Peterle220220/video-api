@@ -140,16 +140,28 @@ router.get('/status/:jobId', authenticateToken, async (req, res) => {
         // Get current CPU usage
         const cpuUsage = await getCurrentCPUUsage();
 
-        // Include URLs for expected outputs
+        // Always include URLs and per-resolution progress for the three target resolutions
         const baseUrl = `${req.protocol}://${req.get('host')}`;
-        const urls = (jobStatus.resolutions || ['1920x1080', '1280x720', '854x480']).map(r => ({
+        const fullResList = ['1920x1080', '1280x720', '854x480'];
+        const urls = fullResList.map(r => ({
             resolution: r,
             url: `${baseUrl}/processed/${jobStatus.video_id}/${r}.mp4`
         }));
 
+        const resolutionProgress = fullResList.map(r => {
+            const info = (jobStatus.resolution_progress && jobStatus.resolution_progress[r]) || { progress: 0, status: 'pending' };
+            return {
+                resolution: r,
+                progress: Math.max(0, Math.min(100, Number(info.progress) || 0)),
+                status: info.status || 'pending',
+                url: `${baseUrl}/processed/${jobStatus.video_id}/${r}.mp4`
+            };
+        });
+
         res.json({
             job: jobStatus,
             urls,
+            resolutionProgress,
             currentCPUUsage: cpuUsage,
             timestamp: new Date().toISOString()
         });
@@ -242,6 +254,52 @@ router.get('/videos/:videoId/transcoded', authenticateToken, async (req, res) =>
     } catch (error) {
         console.error('Error getting transcoded videos:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// Video file metadata by videoId and resolution
+router.get('/metadata/:videoId/:resolution', authenticateToken, async (req, res) => {
+    try {
+        const { videoId, resolution } = req.params;
+        const processedRoot = process.env.PROCESSED_PATH || './processed';
+        const filePath = path.join(processedRoot, videoId, `${resolution}.mp4`);
+
+        // Ensure file exists and get size
+        const stats = await fs.stat(filePath);
+
+        // Probe metadata
+        const info = await transcodingService.getVideoInfo(filePath);
+        const videoStream = (info?.streams || []).find(s => s.codec_type === 'video') || {};
+        const width = videoStream.width || undefined;
+        const height = videoStream.height || undefined;
+        const fpsStr = videoStream.avg_frame_rate || videoStream.r_frame_rate || '';
+        let fps = undefined;
+        if (fpsStr && fpsStr !== '0/0') {
+            const parts = String(fpsStr).split('/');
+            const num = parseFloat(parts[0]);
+            const den = parseFloat(parts[1] || '1');
+            if (isFinite(num) && isFinite(den) && den !== 0) {
+                fps = Number((num / den).toFixed(2));
+            }
+        }
+        const duration = Number(info?.format?.duration) || undefined;
+        const bitrate = Number(info?.format?.bit_rate) || undefined;
+
+        res.json({
+            videoId,
+            resolution,
+            size: stats.size,
+            width,
+            height,
+            fps,
+            duration,
+            bitrate,
+            path: `/processed/${videoId}/${resolution}.mp4`,
+            updatedAt: stats.mtime
+        });
+    } catch (error) {
+        console.error('Error getting metadata:', error?.message || error);
+        res.status(404).json({ error: 'Metadata not found' });
     }
 });
 
@@ -358,5 +416,34 @@ router.get('/library', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Error listing library:', error);
         res.status(500).json({ error: 'Failed to list transcoded library' });
+    }
+});
+
+// Delete a transcoded video folder (admin only)
+router.delete('/videos/:videoId', authenticateToken, async (req, res) => {
+    try {
+        const { videoId } = req.params;
+        if (!req.user || req.user.username !== 'admin') {
+            return res.status(403).json({ error: 'Only admin can delete videos' });
+        }
+        const processedRoot = process.env.PROCESSED_PATH || './processed';
+        const folder = path.join(processedRoot, videoId);
+
+        // Remove folder recursively
+        try {
+            await fs.rm(folder, { recursive: true, force: true });
+        } catch (err) {
+            console.warn('Failed to remove folder:', err?.message || err);
+        }
+
+        // Remove in-memory records
+        try {
+            transcodingService.transcodedByVideoId.delete(videoId);
+        } catch (_) { }
+
+        res.json({ success: true, message: 'Video deleted' });
+    } catch (error) {
+        console.error('Error deleting video:', error);
+        res.status(500).json({ error: 'Failed to delete video' });
     }
 });

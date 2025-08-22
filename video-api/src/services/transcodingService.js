@@ -152,10 +152,10 @@ class TranscodingService {
                         }
                     } catch (_) { /* ignore parse errors */ }
 
-                    // Update progress every 5%
+                    // Update per-resolution progress every 5%
                     if (progress - lastProgressUpdate >= 5) {
                         lastProgressUpdate = progress;
-                        await this.updateJobProgress(jobId, progress);
+                        await this.updateJobResolutionProgress(jobId, resolution, progress);
 
                         // Monitor CPU usage during transcoding
                         const cpuUsage = await getCurrentCPUUsage();
@@ -170,6 +170,9 @@ class TranscodingService {
                         // Save transcoded video record
                         await this.saveTranscodedVideo(videoId, resolution, outputPath, stats.size);
 
+                        // Mark this resolution as completed
+                        await this.updateJobResolutionProgress(jobId, resolution, 100, 'completed');
+
                         console.log(`✅ ${resolution} transcoding completed: ${outputPath}`);
                         resolve({
                             resolution,
@@ -183,6 +186,8 @@ class TranscodingService {
                 })
                 .on('error', (err) => {
                     console.error(`❌ ${resolution} transcoding error:`, err);
+                    // Mark this resolution as failed
+                    this.updateJobResolutionProgress(jobId, resolution, 0, 'failed').catch(() => { });
                     reject(err);
                 });
 
@@ -204,7 +209,10 @@ class TranscodingService {
             created_at: new Date(),
             started_at: new Date(),
             completed_at: null,
-            resolutions
+            resolutions,
+            resolution_progress: Object.fromEntries(
+                resolutions.map(r => [r, { progress: 0, status: 'pending' }])
+            )
         };
         this.jobs.set(jobId, job);
     }
@@ -227,6 +235,39 @@ class TranscodingService {
         const job = this.jobs.get(jobId);
         if (!job) return;
         job.progress = progress;
+        this.jobs.set(jobId, job);
+    }
+
+    // Update progress for a specific resolution and recalc overall job progress/status
+    async updateJobResolutionProgress(jobId, resolution, progress, resolutionStatus = null) {
+        const job = this.jobs.get(jobId);
+        if (!job) return;
+
+        if (!job.resolution_progress) job.resolution_progress = {};
+        const normalizedProgress = Math.max(0, Math.min(100, Math.floor(progress)));
+        const newStatus = resolutionStatus || (normalizedProgress >= 100 ? 'completed' : 'processing');
+        job.resolution_progress[resolution] = {
+            progress: normalizedProgress,
+            status: newStatus
+        };
+
+        const resolutionList = Array.isArray(job.resolutions) && job.resolutions.length
+            ? job.resolutions
+            : ['1920x1080', '1280x720', '854x480'];
+
+        const total = resolutionList.reduce((acc, r) => acc + (job.resolution_progress?.[r]?.progress || 0), 0);
+        job.progress = Math.floor(total / resolutionList.length);
+
+        const statuses = resolutionList.map(r => job.resolution_progress?.[r]?.status || 'processing');
+        if (statuses.every(s => s === 'completed')) {
+            job.status = 'completed';
+            job.completed_at = new Date();
+        } else if (statuses.some(s => s === 'failed')) {
+            job.status = 'failed';
+        } else if (statuses.some(s => s === 'processing')) {
+            job.status = 'processing';
+        }
+
         this.jobs.set(jobId, job);
     }
 

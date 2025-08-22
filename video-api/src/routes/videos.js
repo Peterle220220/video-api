@@ -132,8 +132,9 @@ router.delete('/:id', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'Video not found' });
         }
 
-        if (video.user_id.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-            return res.status(403).json({ error: 'Not authorized to delete this video' });
+        // Only allow deletion by admin username
+        if (!req.user || req.user.username !== 'admin') {
+            return res.status(403).json({ error: 'Only admin can delete videos' });
         }
 
         // Delete video file

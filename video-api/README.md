@@ -8,15 +8,13 @@ A RESTful API for video streaming with CPU‑intensive transcoding (>80%) to str
 - **CPU-Intensive Transcoding**: Convert videos to multiple resolutions using FFmpeg
 - **Real-time CPU Monitoring**: Track CPU usage during transcoding
 - **Authentication & Authorization**: JWT-based authentication
-- **Database Management**: MongoDB for structured data
-- **Caching**: Redis for session and cache management
+- **No Database Required**: In-memory job and account config
 - **Containerization**: Docker and Docker Compose
 
 ## 🛠️ Technology Stack
 
 - **Backend**: Node.js + Express.js
-- **Database**: MongoDB + Mongoose
-- **Cache**: Redis
+- **Data Storage**: In-memory (no DB)
 - **Video Processing**: FFmpeg
 - **Authentication**: JWT
 - **Containerization**: Docker + Docker Compose
@@ -64,11 +62,7 @@ npm install
 cp env.example .env
 ```
 
-3. **Start MongoDB and Redis:**
-
-```bash
-docker-compose up mongodb redis -d
-```
+3. (Optional) Build and run API only with Docker Compose
 
 4. **Run the app:**
 
@@ -86,11 +80,7 @@ npm run dev
 
 ### Video Management
 
-- `GET /api/videos` - Get video list
-- `GET /api/videos/:id` - Get video details
-- `PUT /api/videos/:id` - Update a video
-- `DELETE /api/videos/:id` - Delete a video
-- `GET /api/videos/user/me` - Get current user's videos
+Removed in this demo (no database)
 
 ### Transcoding (CPU-Intensive)
 
@@ -144,7 +134,7 @@ curl -X GET http://localhost:3000/api/transcoding/metrics \
 ### CPU Usage Monitoring
 
 - Real-time CPU usage tracking
-- Historical data stored in Redis
+- Historical data stored in memory (last 100 readings)
 - Alert when CPU > 80%
 - System metrics (memory, load average)
 
@@ -156,17 +146,7 @@ curl -X GET http://localhost:3000/api/transcoding/metrics \
 
 ## 🔐 Authentication
 
-### Register User
-
-```bash
-curl -X POST http://localhost:3000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "testuser",
-    "email": "test@example.com",
-    "password": "password123"
-  }'
-```
+Registration endpoint disabled in this demo
 
 ### Login
 
@@ -179,11 +159,9 @@ curl -X POST http://localhost:3000/api/auth/login \
   }'
 ```
 
-### Default Admin User
+### Accounts
 
-- Username: `admin`
-- Password: `admin123`
-- Role: `admin`
+Accounts are configured in `src/config/accounts.js`.
 
 ## 🐳 Docker Commands
 
@@ -210,8 +188,7 @@ docker-compose down -v
 video-api/
 ├── src/
 │   ├── config/
-│   │   ├── database.js      # MongoDB configuration
-│   │   └── redis.js         # Redis configuration
+│   │   ├── accounts.js      # Local accounts configuration
 │   ├── middleware/
 │   │   └── auth.js          # JWT authentication
 │   ├── models/
@@ -241,11 +218,6 @@ video-api/
 ### Environment Variables
 
 - `PORT`: Server port (default: 3000)
-- `MONGODB_URI`: MongoDB connection string
-- `MONGODB_USER`: MongoDB username
-- `MONGODB_PASSWORD`: MongoDB password
-- `REDIS_HOST`: Redis host
-- `REDIS_PORT`: Redis port
 - `JWT_SECRET`: JWT secret key
 - `UPLOAD_PATH`: Video upload directory
 - `PROCESSED_PATH`: Transcoded video directory
@@ -267,15 +239,7 @@ brew install ffmpeg
 # Download from https://ffmpeg.org/download.html
 ```
 
-### Database connection issues
-
-```bash
-# Check MongoDB status
-docker-compose ps mongodb
-
-# View MongoDB logs
-docker-compose logs mongodb
-```
+Database and Redis have been removed in this demo.
 
 ### High CPU usage expected
 

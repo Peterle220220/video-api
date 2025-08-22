@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, endpoints } from '../services/api';
-
+								
 export default function Videos() {
 	const navigate = useNavigate();
 	const [videos, setVideos] = useState([]);
@@ -12,12 +12,42 @@ export default function Videos() {
 	const [uploading, setUploading] = useState(false);
 	const [uploadProgress, setUploadProgress] = useState(0);
 	const [transcodeProgress, setTranscodeProgress] = useState(0);
+	const [transcode1080Progress, setTranscode1080Progress] = useState(0);
+	const [transcode720Progress, setTranscode720Progress] = useState(0);
+	const [transcode480Progress, setTranscode480Progress] = useState(0);
 	const [transcodeStatus, setTranscodeStatus] = useState('idle');
 	const currentVideoIdRef = useRef('');
+	const currentJobIdRef = useRef('');
 	const pollingRef = useRef(null);
 	const defaultResolutions = ['1920x1080', '1280x720', '854x480'];
 	const [expectedResolutions, setExpectedResolutions] = useState(defaultResolutions);
 	const [resolutionStatuses, setResolutionStatuses] = useState({});
+	const [cpuUsage, setCpuUsage] = useState(null);
+	const [transcodeElapsedSec, setTranscodeElapsedSec] = useState(0);
+	const transcodeStartTsRef = useRef(null);
+	const [metaByUrl, setMetaByUrl] = useState({}); // {url: {sizeBytes, resolution, fps, duration, bitrate}}
+
+	const formatBytes = (bytes) => {
+		if (!bytes && bytes !== 0) return '-';
+		const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+		if (bytes === 0) return '0 B';
+		const i = Math.floor(Math.log(bytes) / Math.log(1024));
+		return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2)} ${sizes[i]}`;
+	};
+
+	const formatSeconds = (s) => {
+		if (!Number.isFinite(s)) return '-';
+		const sec = Math.floor(s % 60);
+		const min = Math.floor((s / 60) % 60);
+		const hr = Math.floor(s / 3600);
+		return hr > 0 ? `${hr}h ${min}m ${sec}s` : `${min}m ${sec}s`;
+	};
+
+	const formatResolutionLabel = (res) => {
+		const match = String(res).match(/x(\d+)$/);
+		if (match && match[1]) return `${match[1]}p`;
+		return String(res);
+	};
 
 	useEffect(() => {
 		// Probe auth quickly and load library
@@ -27,6 +57,7 @@ export default function Videos() {
 
 	const [library, setLibrary] = useState([]);
 	const [selectedPreview, setSelectedPreview] = useState({ videoId: '', url: '' });
+	const user = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
 
 	const loadLibrary = async () => {
 		try {
@@ -54,16 +85,25 @@ export default function Videos() {
 		try {
 			const { data } = await api.get(endpoints.transcoding.transcodedList(inputVideoId));
 			const items = (data?.transcodedVideos || []).map((item) => {
-				const filePath = String(item.file_path || '');
-				const normalized = filePath.replace(/\\/g, '/');
-				const fileName = normalized.split('/').pop();
+				const relPath = `${item.video_id}/${item.resolution}.mp4`;
 				return {
 					id: `${item.video_id}-${item.resolution}`,
 					title: `${item.resolution}`,
-					streamUrl: endpoints.staticPaths.processed(fileName),
+					streamUrl: endpoints.staticPaths.processed(relPath),
+					fileSize: item.file_size,
+					resolution: item.resolution,
+					videoId: item.video_id,
 				};
 			});
 			setVideos(items);
+			// prefetch metadata in background
+			items.forEach(async (it) => {
+				try {
+					const res = await api.get(endpoints.transcoding.metadata(it.videoId, it.resolution));
+					const m = res?.data || {};
+					setMetaByUrl((prev) => ({ ...prev, [it.streamUrl]: { sizeBytes: m.size, resolution: `${m.width}x${m.height}` || it.resolution, fps: m.fps, duration: m.duration, bitrate: m.bitrate } }));
+				} catch (_) {}
+			});
 		} catch (err) {
 			if (err?.response?.status === 401 || err?.response?.status === 403) {
 				localStorage.removeItem('token');
@@ -91,11 +131,11 @@ export default function Videos() {
 		expectedResolutions.forEach((res) => {
 			const item = byRes.get(res);
 			if (item) {
-				const normalized = String(item.file_path || '').replace(/\\/g, '/');
-				const fileName = normalized.split('/').pop();
-				statusObj[res] = { status: 'completed', url: endpoints.staticPaths.processed(fileName) };
+				const relPath = `${item.video_id}/${item.resolution}.mp4`;
+				statusObj[res] = { status: 'completed', url: endpoints.staticPaths.processed(relPath), progress: 100 };
 			} else {
-				statusObj[res] = { status: transcodeStatus === 'completed' ? 'pending' : 'processing', url: null };
+				const prev = (resolutionStatuses || {})[res] || {};
+				statusObj[res] = { status: transcodeStatus === 'completed' ? 'pending' : 'processing', url: null, progress: typeof prev.progress === 'number' ? prev.progress : undefined };
 			}
 		});
 		setResolutionStatuses(statusObj);
@@ -105,30 +145,88 @@ export default function Videos() {
 		if (pollingRef.current) clearInterval(pollingRef.current);
 		setTranscodeStatus('processing');
 		setTranscodeProgress(0);
+		setCpuUsage(null);
+		transcodeStartTsRef.current = Date.now();
+		setTranscodeElapsedSec(0);
 		pollingRef.current = setInterval(async () => {
 			try {
-				const { data } = await api.get(endpoints.transcoding.jobs);
-				const jobs = Array.isArray(data?.activeJobs) ? data.activeJobs : [];
-				const job = jobs.find(j => j.video_id === currentVideoIdRef.current);
-				// Update per-resolution statuses during processing by checking transcoded list
-				try {
-					const tl = await api.get(endpoints.transcoding.transcodedList(currentVideoIdRef.current));
-					updateResolutionStatuses(Array.isArray(tl?.data?.transcodedVideos) ? tl.data.transcodedVideos : []);
-				} catch (_) {}
+				// Ensure we have a jobId; if not, fetch from /jobs using current videoId
+				if (!currentJobIdRef.current) {
+					try {
+						const { data } = await api.get(endpoints.transcoding.jobs);
+						const jobs = Array.isArray(data?.activeJobs) ? data.activeJobs : [];
+						const job = jobs.find(j => j.video_id === currentVideoIdRef.current);
+						if (job && job.job_id) {
+							currentJobIdRef.current = job.job_id;
+						}
+					} catch (_) {}
+				}
 
-				if (!job) {
+				const targetJobId = currentJobIdRef.current;
+				if (!targetJobId) {
+					return; // wait for job discovery next tick
+				}
+
+				const { data: statusData } = await api.get(endpoints.transcoding.status(targetJobId));
+				const job = statusData?.job || {};
+				setTranscode1080Progress(Math.max(0, Math.min(100, Number(job.resolution_progress?.['1920x1080']?.progress) || 0)));
+				setTranscode720Progress(Math.max(0, Math.min(100, Number(job.resolution_progress?.['1280x720']?.progress) || 0)));
+				setTranscode480Progress(Math.max(0, Math.min(100, Number(job.resolution_progress?.['854x480']?.progress) || 0)));
+				// setTranscodeProgress(Math.max(0, Math.min(100, Number(job.progress) || 0)));
+				setTranscodeStatus(job.status || 'processing');
+				// Update CPU metrics and elapsed time
+				try {
+					const { data: metrics } = await api.get(endpoints.transcoding.metrics);
+					const cpu = Number(metrics?.cpu?.current);
+					if (!Number.isNaN(cpu)) setCpuUsage(Math.max(0, Math.min(100, cpu)));
+				} catch (_) {}
+				if (transcodeStartTsRef.current) {
+					setTranscodeElapsedSec(Math.max(0, Math.floor((Date.now() - transcodeStartTsRef.current) / 1000)));
+				}
+				if ((job.status || '').toLowerCase() === 'completed') {
 					clearInterval(pollingRef.current);
 					pollingRef.current = null;
 					setTranscodeProgress(100);
 					setTranscodeStatus('completed');
-					// Load transcoded list when done
+					api.get(endpoints.auth.test).catch(() => {});
+					loadLibrary();
 					fetchTranscodedList();
 					return;
 				}
-				setTranscodeProgress(Math.max(0, Math.min(100, Number(job.progress) || 0)));
-				setTranscodeStatus(job.status || 'processing');
+
+				const jobResolutions = Array.isArray(job?.resolutions) ? job.resolutions : [];
+				const resolutionProgress = job?.resolution_progress || {};
+				if (jobResolutions.length > 0) {
+					// Sync expected resolutions order with backend
+					setExpectedResolutions(jobResolutions.map(r => String(r)));
+					setResolutionStatuses((prev) => {
+						const next = { ...prev };
+						jobResolutions.forEach((res) => {
+							const key = String(res);
+							const info = resolutionProgress[key] || {};
+							const progress = Math.max(0, Math.min(100, Number(info.progress) || 0));
+							const status = progress >= 100 ? 'completed' : (info.status || 'processing');
+							const url = next[key]?.url || null;
+							next[key] = { status, progress, url };
+						});
+						return next;
+					});
+				}
+
+				try {
+					const tl = await api.get(endpoints.transcoding.transcodedList(currentVideoIdRef.current));
+					updateResolutionStatuses(Array.isArray(tl?.data?.transcodedVideos) ? tl.data.transcodedVideos : []);
+				} catch (_) {}
 			} catch (err) {
-				// Ignore transient errors while polling
+				const status = err?.response?.status;
+				if (status === 404) {
+					clearInterval(pollingRef.current);
+					pollingRef.current = null;
+					setTranscodeProgress(100);
+					setTranscodeStatus('completed');
+					fetchTranscodedList();
+					return;
+				}
 			}
 		}, 1000);
 	};
@@ -158,11 +256,14 @@ export default function Videos() {
 				headers: { 'Content-Type': 'multipart/form-data' },
 			});
 			const videoId = res?.data?.videoId;
+			const initialUrls = Array.isArray(res?.data?.urls) ? res.data.urls : [];
 			if (videoId) {
 				currentVideoIdRef.current = videoId;
+				currentJobIdRef.current = '';
 				setInputVideoId(videoId);
-				// reset statuses to processing for all expected resolutions
-				setResolutionStatuses(Object.fromEntries(expectedResolutions.map(res => [res, { status: 'processing', url: null }])));
+				// reset statuses to processing for all expected resolutions with progress
+				const byRes = new Map(initialUrls.map(u => [String(u.resolution), u.url]));
+				setResolutionStatuses(Object.fromEntries(expectedResolutions.map(r => [r, { status: 'processing', url: byRes.get(r) || null, progress: 0 }])));
 				startPollingTranscode();
 			}
 		} catch (err) {
@@ -171,6 +272,40 @@ export default function Videos() {
 			setUploading(false);
 			setUploadFile(null);
 		}
+	};
+
+	const parseResolutionFromUrl = (url) => {
+		const m = String(url).match(/\/(\d+x\d+)\.mp4(\?.*)?$/);
+		return m ? m[1] : '';
+	};
+
+	const ensureMetaForUrl = async (url) => {
+		if (!url || metaByUrl[url]) return;
+		try {
+			// Try server-side ffprobe endpoint using url pattern to extract videoId/resolution
+			const m = String(url).match(/\/processed\/([^/]+)\/(\d+x\d+)\.mp4/);
+			if (m) {
+				const videoId = m[1];
+				const resolution = m[2];
+				try {
+					const res = await api.get(endpoints.transcoding.metadata(videoId, resolution));
+					const md = res?.data || {};
+					setMetaByUrl((prev) => ({ ...prev, [url]: { sizeBytes: md.size, resolution: `${md.width}x${md.height}` || resolution, fps: md.fps, duration: md.duration, bitrate: md.bitrate } }));
+					return;
+				} catch (_) {}
+			}
+			// Fallback: HEAD for size only
+			const res = await fetch(url, { method: 'HEAD' });
+			const len = Number(res.headers.get('content-length'));
+			setMetaByUrl((prev) => ({ ...prev, [url]: { sizeBytes: Number.isFinite(len) ? len : undefined, resolution: parseResolutionFromUrl(url), fps: undefined } }));
+		} catch (_) {
+			setMetaByUrl((prev) => ({ ...prev, [url]: { sizeBytes: undefined, resolution: parseResolutionFromUrl(url), fps: undefined } }));
+		}
+	};
+
+	const onPreviewClick = async (videoId, url) => {
+		setSelectedPreview({ videoId, url });
+		await ensureMetaForUrl(url);
 	};
 
 	return (
@@ -207,13 +342,42 @@ export default function Videos() {
 								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
 									<strong>{item.videoId}</strong>
 									{item.urls.map(u => (
-										<button key={u.url} onClick={() => setSelectedPreview({ videoId: item.videoId, url: u.url })}>
+										<button key={u.url} onClick={() => onPreviewClick(item.videoId, u.url)}>
 											Preview {u.resolution}
 										</button>
 									))}
+									{user?.username === 'admin' && (
+										<button
+											style={{ marginLeft: 'auto', background: '#ef4444', color: 'white' }}
+											onClick={async () => {
+												if (!window.confirm('Delete this video and all transcoded files?')) return;
+												try {
+													await api.delete(endpoints.transcoding.deleteVideo(item.videoId));
+													await loadLibrary();
+													if (currentVideoIdRef.current === item.videoId) {
+														setVideos([]);
+													}
+												} catch (err) {
+													alert(err?.response?.data?.error || 'Failed to delete video');
+												}
+										}}
+									>
+										Delete
+									</button>
+									)}
 								</div>
 								{selectedPreview.videoId === item.videoId && selectedPreview.url && (
-									<video controls width="100%" src={selectedPreview.url} />
+									<>
+										<video key={selectedPreview.url} controls crossOrigin="anonymous" width="100%">
+											<source src={selectedPreview.url} type="video/mp4" />
+											Your browser does not support the video tag.
+										</video>
+										<div style={{ fontSize: 12, color: '#374151' }}>
+											{(() => { const meta = metaByUrl[selectedPreview.url] || {}; return (
+												<span>Size: {formatBytes(meta.sizeBytes)} — Resolution: {meta.resolution || parseResolutionFromUrl(selectedPreview.url)} {meta.fps ? `— FPS: ${meta.fps}` : meta.duration ? `— Duration: ${formatSeconds(meta.duration)}` : ''} {meta.bitrate ? `— Bitrate: ${(meta.bitrate/1000).toFixed(0)} kbps` : ''}</span>
+											); })()}
+										</div>
+									</>
 								)}
 							</div>
 						))}
@@ -225,15 +389,21 @@ export default function Videos() {
 			{Object.keys(resolutionStatuses).length > 0 && (
 				<div className="video-card" style={{ marginBottom: 16 }}>
 					<h4 style={{ margin: 0 }}>Resolution Status</h4>
+					<div style={{ display: 'flex', alignItems: 'center', gap: 12, color: '#374151', marginTop: 6 }}>
+						{cpuUsage != null && <span>CPU: {cpuUsage}%</span>}
+						<span>Elapsed: {Math.floor(transcodeElapsedSec / 60)}m {transcodeElapsedSec % 60}s</span>
+					</div>
 					<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginTop: 8 }}>
 						{expectedResolutions.map((res) => {
 							const info = resolutionStatuses[res] || { status: 'processing', url: null };
-							const label = res === '1920x1080' ? '1080p' : res === '1280x720' ? '720p' : '480p';
+							const label = formatResolutionLabel(res);
+							const percent = res === '1920x1080' ? transcode1080Progress : res === '1280x720' ? transcode720Progress : res === '854x480' ? transcode480Progress : 0;
+							const computedStatus = percent >= 100 ? 'completed' : 'processing';
 							return (
 								<div key={res} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-									<span style={{ width: 10, height: 10, borderRadius: '50%', background: info.status === 'completed' ? '#16a34a' : info.status === 'processing' ? '#f59e0b' : '#9ca3af' }} />
-									<span>{label}: {info.status === 'completed' ? 'completed' : `${transcodeProgress}%`}</span>
-									{info.url && <a href={info.url} target="_blank" rel="noreferrer">Open</a>}
+									<span style={{ width: 10, height: 10, borderRadius: '50%', background: computedStatus === 'completed' ? '#16a34a' : '#f59e0b' }} />
+									<span>{label}: {computedStatus === 'completed' ? 'completed' : `${Math.max(0, Math.min(100, percent))}%`}</span>
+									{/* {info.url && <a href={info.url} target="_blank" rel="noreferrer">Open</a>} */}
 								</div>
 							);
 						})}
@@ -248,7 +418,15 @@ export default function Videos() {
 						videos.map((v) => (
 							<div key={v.id} className="video-card">
 								<h4>{v.title || 'Untitled'}</h4>
-								<video controls width="100%" src={v.streamUrl} />
+								<video key={v.streamUrl} controls crossOrigin="anonymous" width="100%">
+									<source src={v.streamUrl} type="video/mp4" />
+									Your browser does not support the video tag.
+								</video>
+								<div style={{ fontSize: 12, color: '#374151', marginTop: 4 }}>
+									{(() => { const meta = metaByUrl[v.streamUrl] || {}; return (
+										<span>Size: {formatBytes(meta.sizeBytes ?? v.fileSize)} — Resolution: {meta.resolution || v.resolution || v.title} {meta.fps ? `— FPS: ${meta.fps}` : meta.duration ? `— Duration: ${formatSeconds(meta.duration)}` : ''} {meta.bitrate ? `— Bitrate: ${(meta.bitrate/1000).toFixed(0)} kbps` : ''}</span>
+									); })()}
+								</div>
 							</div>
 						))
 					)}
