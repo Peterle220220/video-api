@@ -184,20 +184,20 @@ docker-compose down -v
 
 ## 🧪 CPU Load Testing with Docker (k6)
 
-Mục tiêu: tạo tải CPU >80% trong 5 phút với headroom mạng (endpoint `test-cpu` rất ít dữ liệu truyền).
+Goal: drive CPU >80% for 5 minutes with network headroom (the `test-cpu` endpoint transfers very little data).
 
-### 1) Lấy JWT token
+### 1) Get JWT token
 
 ```bash
 curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123"}'
-# copy giá trị "token" từ response
+# copy the "token" value from the response
 ```
 
-### 2) Chạy toàn bộ stack (API + Load Generator)
+### 2) Run the whole stack (API + Load Generator)
 
-Sửa `docker-compose.yml` phần service `load` để đặt `AUTH_TOKEN` bằng token ở trên (hoặc export khi chạy k6 thủ công).
+Edit the `load` service in `docker-compose.yml` to set `AUTH_TOKEN` using the token above (or export it when running k6 manually).
 
 ```yaml
   load:
@@ -212,24 +212,24 @@ Sửa `docker-compose.yml` phần service `load` để đặt `AUTH_TOKEN` bằn
     entrypoint: ["k6", "run", "/scripts/test-cpu.js"]
 ```
 
-Khởi chạy:
+Start:
 
 ```bash
 docker-compose up -d --build
 docker-compose logs -f api | cat
 ```
 
-Theo dõi CPU trong log API (sẽ thấy cảnh báo >80% và tiến độ transcoding nếu có):
+Monitor CPU in API logs (you will see >80% warnings and transcoding progress if present):
 
 ```bash
 docker-compose logs -f api | cat
 ```
 
-Kết quả k6 sẽ được ghi ra `video-api/scripts/k6_results.csv` (nếu bật `K6_OUT=csv`).
+k6 results will be written to `video-api/scripts/k6_results.csv` (if `K6_OUT=csv` is enabled).
 
-### 3) Chạy k6 thủ công (tùy chọn)
+### 3) Run k6 manually (optional)
 
-Nếu không muốn dùng service `load`, có thể chạy riêng:
+If you don't want to use the `load` service, you can run it separately:
 
 ```bash
 docker run --rm -it \
@@ -241,9 +241,9 @@ docker run --rm -it \
   grafana/k6:0.49.0 run /scripts/test-cpu.js
 ```
 
-Ghi chú:
-- `VUS` điều chỉnh số người dùng ảo; 20–40 là mức thường đủ để giữ CPU >80% với endpoint `test-cpu` (vì mỗi request kích hoạt vòng tính toán 300s phía server).
-- Network headroom: endpoint chỉ gửi/nhận JSON nhỏ ⇒ băng thông thấp, đủ headroom để nhân tải thêm ≥3 servers.
+Notes:
+- `VUS` controls the number of virtual users; 20–40 is usually enough to keep CPU >80% with the `test-cpu` endpoint (each request triggers a 300s compute loop on the server).
+- Network headroom: the endpoint only sends/receives small JSON ⇒ low bandwidth, leaving enough headroom to scale out to ≥3 servers.
 
 ## 📁 Project Structure
 
