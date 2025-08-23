@@ -182,6 +182,69 @@ docker-compose down
 docker-compose down -v
 ```
 
+## 🧪 CPU Load Testing with Docker (k6)
+
+Mục tiêu: tạo tải CPU >80% trong 5 phút với headroom mạng (endpoint `test-cpu` rất ít dữ liệu truyền).
+
+### 1) Lấy JWT token
+
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin123"}'
+# copy giá trị "token" từ response
+```
+
+### 2) Chạy toàn bộ stack (API + Load Generator)
+
+Sửa `docker-compose.yml` phần service `load` để đặt `AUTH_TOKEN` bằng token ở trên (hoặc export khi chạy k6 thủ công).
+
+```yaml
+  load:
+    image: grafana/k6:0.49.0
+    environment:
+      - API_BASE=http://api:3000
+      - AUTH_TOKEN=REPLACE_WITH_YOUR_TOKEN
+      - TEST_DURATION=5m
+      - VUS=25
+    volumes:
+      - ./scripts:/scripts
+    entrypoint: ["k6", "run", "/scripts/test-cpu.js"]
+```
+
+Khởi chạy:
+
+```bash
+docker-compose up -d --build
+docker-compose logs -f api | cat
+```
+
+Theo dõi CPU trong log API (sẽ thấy cảnh báo >80% và tiến độ transcoding nếu có):
+
+```bash
+docker-compose logs -f api | cat
+```
+
+Kết quả k6 sẽ được ghi ra `video-api/scripts/k6_results.csv` (nếu bật `K6_OUT=csv`).
+
+### 3) Chạy k6 thủ công (tùy chọn)
+
+Nếu không muốn dùng service `load`, có thể chạy riêng:
+
+```bash
+docker run --rm -it \
+  -e API_BASE=http://host.docker.internal:3000 \
+  -e AUTH_TOKEN=YOUR_TOKEN \
+  -e TEST_DURATION=5m \
+  -e VUS=25 \
+  -v $(pwd)/scripts:/scripts \
+  grafana/k6:0.49.0 run /scripts/test-cpu.js
+```
+
+Ghi chú:
+- `VUS` điều chỉnh số người dùng ảo; 20–40 là mức thường đủ để giữ CPU >80% với endpoint `test-cpu` (vì mỗi request kích hoạt vòng tính toán 300s phía server).
+- Network headroom: endpoint chỉ gửi/nhận JSON nhỏ ⇒ băng thông thấp, đủ headroom để nhân tải thêm ≥3 servers.
+
 ## 📁 Project Structure
 
 ```

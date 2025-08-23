@@ -413,15 +413,15 @@ export default function Videos() {
 								<select
 									value={libraryLimit}
 									onChange={(e) => {
-										const next = parseInt(e.target.value, 10) || 10;
+										const next = parseInt(e.target.value, 5) || 5;
 										setLibraryLimit(next);
 										loadLibrary(1, next);
 									}}
 								>
+									<option value={1}>1</option>
 									<option value={5}>5</option>
 									<option value={10}>10</option>
 									<option value={20}>20</option>
-									<option value={50}>50</option>
 								</select>
 								<button onClick={goToPrevPage} disabled={!libraryPagination.hasPrev}>Prev</button>
 								<button onClick={goToNextPage} disabled={!libraryPagination.hasNext}>Next</button>
