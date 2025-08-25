@@ -12,10 +12,10 @@ services:
       - PROCESSED_PATH=./processed
       - MAX_FILE_SIZE=500MB
       - CPU_MONITORING_INTERVAL=1000
-      - FFMPEG_THREADS=2         # dùng cả 2 vCPU
-      - FFMPEG_PRESET=fast       # nặng CPU hơn 'veryfast' (có thể dùng medium nếu còn RAM)
-      - FFMPEG_CRF=22            # giảm CRF => nặng CPU hơn (20–23)
-      - FFMPEG_FPS=30            # tăng fps encode
+      - FFMPEG_THREADS=2
+      - FFMPEG_PRESET=fast
+      - FFMPEG_CRF=22
+      - FFMPEG_FPS=30
       - DEFAULT_RESOLUTIONS=["1280x720","854x480"]
       - ASSEMBLYAI_API_KEY=f0f4e03646a543b4bc994995021222b0
     ports:
