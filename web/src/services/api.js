@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const apiBaseUrl = process.env.REACT_APP_API_BASE || 'http://3.25.143.49:3000';
+const apiBaseUrl = process.env.REACT_APP_API_BASE || 'http://localhost:3000';
 
 export const api = axios.create({
     baseURL: apiBaseUrl,
@@ -20,14 +20,6 @@ export const endpoints = {
         profile: '/api/auth/profile',
         test: '/api/auth/test',
     },
-    videos: {
-        list: '/api/videos',
-        detail: (id) => `/api/videos/${id}`,
-        update: (id) => `/api/videos/${id}`,
-        remove: (id) => `/api/videos/${id}`,
-        mine: '/api/videos/user/me',
-        stats: '/api/videos/stats/overview',
-    },
     transcoding: {
         start: '/api/transcoding/start',
         jobs: '/api/transcoding/jobs',
@@ -38,6 +30,9 @@ export const endpoints = {
         metadata: (videoId, resolution) => `/api/transcoding/metadata/${videoId}/${resolution}`,
         deleteVideo: (videoId) => `/api/transcoding/videos/${videoId}`,
         meta: (videoId) => `/api/transcoding/videos/${videoId}/meta`,
+    },
+    videos: {
+        updateDescription: (videoId) => `/api/videos/${videoId}/description`,
     },
     staticPaths: {
         processed: (filename) => `${apiBaseUrl}/processed/${filename}`,

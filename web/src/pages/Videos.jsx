@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, endpoints } from '../services/api';
-								
+																	
 export default function Videos() {
 	const navigate = useNavigate();
 	const [videos, setVideos] = useState([]);
@@ -27,6 +27,8 @@ export default function Videos() {
 	const transcodeStartTsRef = useRef(null);
 	const [metaByUrl, setMetaByUrl] = useState({}); // {url: {sizeBytes, resolution, fps, duration, bitrate}}
 	const [aaiMetaByVideoId, setAaiMetaByVideoId] = useState({}); // {videoId: {status, summary, chapters, highlights, text}}
+	const [descDraftByVideoId, setDescDraftByVideoId] = useState({}); // {videoId: string}
+	const [descSaving, setDescSaving] = useState({}); // {videoId: boolean}
 	const aaiPollingRef = useRef(null);
 	const aaiPollingVideoIdRef = useRef('');
 
@@ -36,6 +38,29 @@ export default function Videos() {
 		if (bytes === 0) return '0 B';
 		const i = Math.floor(Math.log(bytes) / Math.log(1024));
 		return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2)} ${sizes[i]}`;
+	};
+
+	const onEditDescriptionChange = (videoId, value) => {
+		setDescDraftByVideoId((prev) => ({ ...prev, [videoId]: value }));
+	};
+
+	const saveDescription = async (videoId) => {
+		try {
+			const text = String((descDraftByVideoId[videoId] ?? aaiMetaByVideoId[videoId]?.description ?? '')).trim();
+			if (!text) {
+				alert('Description is required');
+				return;
+			}
+			setDescSaving((prev) => ({ ...prev, [videoId]: true }));
+			const { data } = await api.put(endpoints.videos.updateDescription(videoId), { description: text });
+			const meta = data?.meta || { description: text };
+			setAaiMetaByVideoId((prev) => ({ ...prev, [videoId]: { ...(prev[videoId] || {}), ...meta } }));
+			setDescDraftByVideoId((prev) => ({ ...prev, [videoId]: meta.description }));
+		} catch (err) {
+			alert(err?.response?.data?.error || 'Failed to update description');
+		} finally {
+			setDescSaving((prev) => ({ ...prev, [videoId]: false }));
+		}
 	};
 
 	const formatSeconds = (s) => {
@@ -67,14 +92,7 @@ export default function Videos() {
 
 	const loadLibrary = async (page = libraryPage, limit = libraryLimit) => {
 		try {
-			let data;
-			try {
-				const res = await api.get(endpoints.videos.list, { params: { page, limit } });
-				data = res?.data;
-			} catch (_) {
-				const res2 = await api.get(endpoints.transcoding.library, { params: { page, limit } });
-				data = res2?.data;
-			}
+			const { data } = await api.get(endpoints.transcoding.library, { params: { page, limit } });
 			const list = Array.isArray(data?.videos) ? data.videos : [];
 			setLibrary(list);
 			const p = data?.pagination || {};
@@ -216,7 +234,7 @@ export default function Videos() {
 				try {
 					const { data: metrics } = await api.get(endpoints.transcoding.metrics);
 					const cpu = Number(metrics?.cpu?.current);
-					if (!Number.isNaN(cpu)) setCpuUsage(Math.max(0, Math.min(100, cpu)));
+					if (!Number.isNaN(cpu)) setCpuUsage(Math.max(0, Math.min(100, cpu))); 
 				} catch (_) {}
 				if (transcodeStartTsRef.current) {
 					setTranscodeElapsedSec(Math.max(0, Math.floor((Date.now() - transcodeStartTsRef.current) / 1000)));
@@ -449,11 +467,7 @@ export default function Videos() {
 											onClick={async () => {
 												if (!window.confirm('Delete this video and all transcoded files?')) return;
 												try {
-													try {
-														await api.delete(endpoints.videos.remove(item.videoId));
-													} catch (_) {
-														await api.delete(endpoints.transcoding.deleteVideo(item.videoId));
-													}
+													await api.delete(endpoints.transcoding.deleteVideo(item.videoId));
 													await loadLibrary();
 													if (currentVideoIdRef.current === item.videoId) {
 														setVideos([]);
@@ -466,6 +480,17 @@ export default function Videos() {
 											Delete
 										</button>
 									)}
+								</div>
+								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+									<input
+										placeholder="Description"
+										value={(descDraftByVideoId[item.videoId] ?? aaiMetaByVideoId[item.videoId]?.description ?? '')}
+										onChange={(e) => onEditDescriptionChange(item.videoId, e.target.value)}
+										style={{ flex: 1, minWidth: 240, padding: 6 }}
+									/>
+									<button onClick={() => saveDescription(item.videoId)} disabled={!!descSaving[item.videoId]}>
+										{descSaving[item.videoId] ? 'Saving...' : 'Save'}
+									</button>
 								</div>
 								{aaiMetaByVideoId[item.videoId] && (
 									<div style={{ fontSize: 12, color: '#374151', background: '#f8fafc', padding: 8, borderRadius: 6 }}>
