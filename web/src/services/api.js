@@ -20,6 +20,14 @@ export const endpoints = {
         profile: '/api/auth/profile',
         test: '/api/auth/test',
     },
+    videos: {
+        list: '/api/videos',
+        detail: (id) => `/api/videos/${id}`,
+        update: (id) => `/api/videos/${id}`,
+        remove: (id) => `/api/videos/${id}`,
+        mine: '/api/videos/user/me',
+        stats: '/api/videos/stats/overview',
+    },
     transcoding: {
         start: '/api/transcoding/start',
         jobs: '/api/transcoding/jobs',

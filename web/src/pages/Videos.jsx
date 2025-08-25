@@ -67,7 +67,14 @@ export default function Videos() {
 
 	const loadLibrary = async (page = libraryPage, limit = libraryLimit) => {
 		try {
-			const { data } = await api.get(endpoints.transcoding.library, { params: { page, limit } });
+			let data;
+			try {
+				const res = await api.get(endpoints.videos.list, { params: { page, limit } });
+				data = res?.data;
+			} catch (_) {
+				const res2 = await api.get(endpoints.transcoding.library, { params: { page, limit } });
+				data = res2?.data;
+			}
 			const list = Array.isArray(data?.videos) ? data.videos : [];
 			setLibrary(list);
 			const p = data?.pagination || {};
@@ -442,7 +449,11 @@ export default function Videos() {
 											onClick={async () => {
 												if (!window.confirm('Delete this video and all transcoded files?')) return;
 												try {
-													await api.delete(endpoints.transcoding.deleteVideo(item.videoId));
+													try {
+														await api.delete(endpoints.videos.remove(item.videoId));
+													} catch (_) {
+														await api.delete(endpoints.transcoding.deleteVideo(item.videoId));
+													}
 													await loadLibrary();
 													if (currentVideoIdRef.current === item.videoId) {
 														setVideos([]);

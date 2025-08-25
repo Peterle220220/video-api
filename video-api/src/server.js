@@ -6,6 +6,7 @@ require('dotenv').config();
 
 const authRoutes = require('./routes/auth');
 const transcodingRoutes = require('./routes/transcoding');
+const videoRoutes = require('./routes/videos');
 const { startCPUMonitoring } = require('./utils/cpuMonitor');
 const multer = require('multer');
 
@@ -25,6 +26,7 @@ app.use('/processed', express.static(path.join(__dirname, '../processed')));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/transcoding', transcodingRoutes);
+app.use('/api/videos', videoRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
