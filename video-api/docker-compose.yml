@@ -12,6 +12,13 @@ services:
       - PROCESSED_PATH=./processed
       - MAX_FILE_SIZE=500MB
       - CPU_MONITORING_INTERVAL=1000
+      - FFMPEG_THREADS=1
+      - FFMPEG_PRESET=veryfast
+      - FFMPEG_CRF=24
+      - FFMPEG_FPS=24
+      - BITRATE_720=1200k
+      - BITRATE_480=800k
+      - DEFAULT_RESOLUTIONS=["1280x720","854x480"]
       - ASSEMBLYAI_API_KEY=f0f4e03646a543b4bc994995021222b0
     ports:
       - "3000:3000"

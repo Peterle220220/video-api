@@ -94,8 +94,18 @@ router.post('/start', authenticateToken, upload.single('video'), async (req, res
         // Create an in-memory video id
         const videoId = uuidv4();
 
-        // Parse resolutions
-        const resolutionList = resolutions ? JSON.parse(resolutions) : ['1920x1080', '1280x720', '854x480'];
+        // Parse resolutions; default to lower set for small instances
+        let resolutionList = ['1280x720', '854x480'];
+        if (resolutions) {
+            try {
+                const parsed = JSON.parse(resolutions);
+                if (Array.isArray(parsed) && parsed.length) {
+                    resolutionList = parsed;
+                }
+            } catch (e) {
+                // keep defaults if parse fails
+            }
+        }
 
         // Start transcoding in background
         transcodingService.transcodeVideo(videoId, videoPath, resolutionList)
