@@ -12,7 +12,7 @@ services:
       - PROCESSED_PATH=./processed
       - MAX_FILE_SIZE=500MB
       - CPU_MONITORING_INTERVAL=1000
-      - ASSEMBLYAI_API_KEY=0f9a5e8206e947bc91d6349b368811b2
+      - ASSEMBLYAI_API_KEY=f0f4e03646a543b4bc994995021222b0
     ports:
       - "3000:3000"
     volumes:
@@ -20,7 +20,11 @@ services:
       - ./processed:/app/processed
     depends_on: {}
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode===200?0:1))\" "]
+      test:
+        [
+          "CMD-SHELL",
+          'node -e "require(''http'').get(''http://localhost:3000/health'', r => process.exit(r.statusCode===200?0:1))" ',
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
