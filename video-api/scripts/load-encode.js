@@ -13,12 +13,16 @@ const os = require("os");
 const axios = require("axios");
 const FormData = require("form-data");
 
-function getArg(name, def) {
-  const env = process.env[name.toUpperCase()];
-  if (env !== undefined && env !== "") return env;
+function getVal(name, def) {
+  // 1) CLI arg has highest priority
   const flag = `--${name}`;
   const idx = process.argv.indexOf(flag);
   if (idx > -1 && process.argv[idx + 1]) return process.argv[idx + 1];
+  // 2) Environment vars: support LOAD_* prefix to avoid collision with system vars
+  const upper = name.toUpperCase();
+  const fromEnv = process.env[`LOAD_${upper}`] ?? process.env[upper];
+  if (fromEnv !== undefined && String(fromEnv) !== "") return fromEnv;
+  // 3) Default
   return def;
 }
 
@@ -49,14 +53,14 @@ async function startTranscode(apiBase, token, filePath, title, resolutionsJson) 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 (async () => {
-  const apiBase = String(getArg("api-base", process.env.API_BASE || "http://localhost:3000"));
-  const username = String(getArg("user", process.env.USERNAME || "admin"));
-  const password = String(getArg("pass", process.env.PASSWORD || "admin123"));
-  const minutes = Number(getArg("minutes", process.env.MINUTES || 5));
-  const vus = Number(getArg("vus", process.env.VUS || 4));
-  const sleepBetween = Number(getArg("sleep", process.env.SLEEP_BETWEEN || 1000));
-  const videoPath = String(getArg("video", process.env.VIDEO_PATH || path.resolve(__dirname, "../sample.mp4")));
-  const heavy = String(getArg("heavy", process.env.HEAVY || "1")) === "1";
+  const apiBase = String(getVal("api-base", "http://localhost:3000"));
+  const username = String(getVal("user", "admin"));
+  const password = String(getVal("pass", "admin123"));
+  const minutes = Number(getVal("minutes", 5));
+  const vus = Number(getVal("vus", 4));
+  const sleepBetween = Number(getVal("sleep", 1000));
+  const videoPath = String(getVal("video", path.resolve(__dirname, "../sample.mp4")));
+  const heavy = String(getVal("heavy", "1")) === "1";
 
   if (!fs.existsSync(videoPath)) {
     throw new Error(`Video file not found: ${videoPath}`);
