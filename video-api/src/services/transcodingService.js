@@ -5,27 +5,11 @@ const fsSync = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { getCurrentCPUUsage } = require('../utils/cpuMonitor');
 
-// Resource-friendly defaults for small instances (e.g., t3.micro: 2 vCPU burst, ~1GB RAM)
-const FFMPEG_THREADS = String(process.env.FFMPEG_THREADS || '1');
-const FFMPEG_PRESET = String(process.env.FFMPEG_PRESET || 'veryfast');
-const FFMPEG_CRF = String(process.env.FFMPEG_CRF || '24');
-const FFMPEG_FPS = Number(process.env.FFMPEG_FPS || 24);
-const DEFAULT_RESOLUTIONS = (process.env.DEFAULT_RESOLUTIONS && (() => {
-    try {
-        const parsed = JSON.parse(process.env.DEFAULT_RESOLUTIONS);
-        return Array.isArray(parsed) && parsed.length ? parsed : ['1280x720', '854x480'];
-    } catch (_) {
-        return ['1280x720', '854x480'];
-    }
-})()) || ['1280x720', '854x480'];
-
-const pickBitrateForResolution = (resolution) => {
-    const res = String(resolution || '').toLowerCase();
-    if (res.includes('1920x1080') || res.includes('1080')) return String(process.env.BITRATE_1080 || '2000k');
-    if (res.includes('1280x720') || res.includes('720')) return String(process.env.BITRATE_720 || '1200k');
-    if (res.includes('854x480') || res.includes('480')) return String(process.env.BITRATE_480 || '800k');
-    return String(process.env.BITRATE_DEFAULT || '1000k');
-};
+ // FFmpeg tunables from environment
+const FFMPEG_PRESET = String(process.env.FFMPEG_PRESET || 'medium');
+const FFMPEG_CRF = String(process.env.FFMPEG_CRF || '23');
+const FFMPEG_FPS = Number(process.env.FFMPEG_FPS || 30);
+const FFMPEG_THREADS = Number(process.env.FFMPEG_THREADS || 0); // 0 = auto by ffmpeg
 
 // Configure FFmpeg paths (auto-detect if env invalid or missing)
 (function configureFfmpegPaths() {
@@ -93,7 +77,7 @@ class TranscodingService {
     }
 
     // Transcode video to different resolutions
-    async transcodeVideo(videoId, inputPath, resolutions = DEFAULT_RESOLUTIONS) {
+    async transcodeVideo(videoId, inputPath, resolutions = ['1920x1080', '1280x720', '854x480']) {
         const jobId = uuidv4();
         const startTime = Date.now();
 
@@ -108,19 +92,19 @@ class TranscodingService {
             console.log(`🎬 Starting transcoding for video ${videoId} with job ${jobId}`);
             console.log(`📊 Video duration: ${duration}s`);
 
-            // Process each resolution SEQUENTIALLY to reduce memory/CPU burst on small instances
-            const results = [];
-            for (const resolution of resolutions) {
-                // eslint-disable-next-line no-await-in-loop
-                const result = await this.transcodeToResolution(videoId, jobId, inputPath, resolution, duration);
-                results.push(result);
-            }
+            // Process each resolution
+            const transcodingPromises = resolutions.map(resolution =>
+                this.transcodeToResolution(videoId, jobId, inputPath, resolution, duration)
+            );
+
+            // Wait for all transcoding to complete
+            const results = await Promise.all(transcodingPromises);
 
             // Update job status
             await this.updateJobStatus(jobId, 'completed', 100);
 
             const totalTime = Date.now() - startTime;
-            console.log(`✅ Transcoding completed for job ${jobId} in ${totalTime}ms`);
+            console.log(`✅ Transcoding completed for job  {jobId} in ${totalTime}ms`);
 
             return {
                 jobId,
@@ -149,23 +133,25 @@ class TranscodingService {
             let progress = 0;
             let lastProgressUpdate = 0;
 
-            const targetFps = Number.isFinite(FFMPEG_FPS) && FFMPEG_FPS > 0 ? FFMPEG_FPS : 24;
-            const videoBitrate = pickBitrateForResolution(resolution);
-
             const command = ffmpeg(inputPath)
                 .videoCodec('libx264')
                 .audioCodec('aac')
                 .size(resolution)
-                .videoBitrate(videoBitrate)
+                .videoBitrate('2000k')
                 .audioBitrate('128k')
-                .fps(targetFps)
+                .fps(isFinite(FFMPEG_FPS) && FFMPEG_FPS > 0 ? FFMPEG_FPS : 30)
                 .outputOptions([
                     '-crf', FFMPEG_CRF,
                     '-preset', FFMPEG_PRESET,
                     '-movflags +faststart',
-                    '-pix_fmt yuv420p',
-                    '-threads', FFMPEG_THREADS
+                    '-pix_fmt yuv420p'
                 ])
+                // Pass threads if explicitly configured; 0 or NaN => let ffmpeg auto-detect
+                .outputOptions(
+                    isFinite(FFMPEG_THREADS) && FFMPEG_THREADS > 0
+                        ? ['-threads', String(FFMPEG_THREADS)]
+                        : []
+                )
                 .on('start', (commandLine) => {
                     console.log(`🔄 Starting ${resolution} transcoding: ${commandLine}`);
                 })
