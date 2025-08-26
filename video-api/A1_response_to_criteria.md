@@ -81,9 +81,7 @@
 - **One line description**: Load scripts drive sustained CPU via a dedicated endpoint and/or multiple transcode jobs.
 - **Video timestamp:** mm:ss
 - **Relevant files:**
-  - `video-api/src/routes/transcoding.js`
-  - `video-api/scripts/test-cpu.js`
-  - `video-api/scripts/cpu-load.sh`
+  - `video-api/scripts/load-encode.js`
 
 ## Additional criteria
 
