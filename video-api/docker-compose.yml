@@ -60,7 +60,7 @@ services:
       api:
         condition: service_healthy
     environment:
-      - API_BASE=http://api:3000
+      - API_BASE=http://localhost:3000
       - USERNAME=admin
       - PASSWORD=admin123
       - MINUTES=5
@@ -70,6 +70,6 @@ services:
     volumes:
       - ./scripts:/scripts:ro
       - ./sample.mp4:/app/sample.mp4:ro
-    entrypoint: ["/bin/sh","-c","apk add --no-cache bash jq curl > /dev/null && bash /scripts/cpu-load.sh --mode transcode --heavy --api-base ${API_BASE} --user ${USERNAME} --pass ${PASSWORD} --minutes ${MINUTES} --vus ${VUS} --sleep ${SLEEP_BETWEEN} --video ${VIDEO_PATH}"]
+    entrypoint: ["/bin/sh","-c","apk add --no-cache bash jq curl > /dev/null && bash /scripts/cpu-load.sh --mode transcode --heavy --api-base $${API_BASE} --user $${USERNAME} --pass $${PASSWORD} --minutes $${MINUTES} --vus $${VUS} --sleep $${SLEEP_BETWEEN} --video $${VIDEO_PATH}"]
 
 volumes: {}
