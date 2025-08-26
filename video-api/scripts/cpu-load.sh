@@ -18,6 +18,7 @@ SLEEP_BETWEEN=1             # seconds between requests (cpu mode)
 VIDEO_PATH="./sample.mp4"  # used in transcode mode
 RESOLUTIONS='["1280x720","854x480"]'  # used in transcode mode
 TOKEN=""
+HEAVY=0                    # transcode heavy mode: push CPU harder and keep queueing jobs
 
 usage() {
   cat <<EOF
@@ -30,10 +31,11 @@ Options:
   --mode MODE            cpu | transcode (default: ${MODE})
   --vus N                Number of parallel workers (default: ${VUS})
   --minutes N            Test duration in minutes (default: ${MINUTES})
-  --sleep S              Seconds between requests (cpu mode, default: ${SLEEP_BETWEEN})
+  --sleep S              Seconds between requests (default: ${SLEEP_BETWEEN})
   --video PATH           Video file path (transcode mode)
   --resolutions JSON     JSON array of resolutions (transcode mode)
   --token TOKEN          Pre-provided JWT token (skips login)
+  --heavy                Transcode heavy load (adds 1080p and keeps queueing jobs)
   -h, --help             Show this help
 
 Examples:
@@ -42,6 +44,9 @@ Examples:
 
   # Transcode mode with a small local file (requires ffmpeg threads>=2 to push >80%)
   $(basename "$0") --mode transcode --video ./tiny.mp4 --vus 3 --minutes 5
+
+  # Force ~100% CPU for ~5 minutes using heavy transcode (keeps queueing)
+  $(basename "$0") --mode transcode --heavy --minutes 5
 EOF
 }
 
@@ -59,6 +64,7 @@ while [[ $# -gt 0 ]]; do
     --video) VIDEO_PATH="$2"; shift 2;;
     --resolutions) RESOLUTIONS="$2"; shift 2;;
     --token) TOKEN="$2"; shift 2;;
+    --heavy) HEAVY=1; shift 1;;
     -h|--help) usage; exit 0;;
     *) echo "Unknown option: $1"; usage; exit 1;;
   esac
@@ -70,6 +76,18 @@ if ! [[ "$MINUTES" =~ ^[0-9]+$ ]]; then echo "--minutes must be integer"; exit 1
 if ! [[ "$SLEEP_BETWEEN" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then echo "--sleep must be number"; exit 1; fi
 
 CPU_TEST_SECONDS=$(( MINUTES * 60 ))
+
+# Autotune for transcode if user left defaults: try to choose a reasonable VUS
+if [[ "$MODE" == "transcode" && "$VUS" -eq 30 ]]; then
+  if command -v nproc >/dev/null 2>&1; then
+    CORES=$(nproc)
+  else
+    CORES=2
+  fi
+  # Assume ffmpeg uses ~2 threads per job; target ~2x cores to keep pipeline full
+  VUS=$(( CORES * 2 ))
+  if [[ "$VUS" -lt 3 ]]; then VUS=3; fi
+fi
 
 get_token() {
   local url="${API_BASE}/api/auth/login"
@@ -134,16 +152,27 @@ case "$MODE" in
       echo "Video file not found: $VIDEO_PATH" >&2
       exit 1
     fi
-    log "Starting ${VUS} transcode jobs in background; script will not poll results."
+    # Heavy mode: bump resolutions if not already heavy
+    if [[ "$HEAVY" -eq 1 ]]; then
+      RESOLUTIONS='["1920x1080","1280x720","854x480"]'
+      log "HEAVY mode enabled: using resolutions=${RESOLUTIONS} and continuous queuing for ${MINUTES} minutes."
+    fi
+
+    log "Starting ${VUS} transcode jobs; will keep queueing until ${MINUTES} minutes elapse."
     for i in $(seq 1 "$VUS"); do
       transcode_worker "$i" &
       sleep 1
     done
-    log "Letting ffmpeg processes run for ~${MINUTES} minutes."
-    # Passive wait to keep script alive while jobs proceed
+    log "Sustaining load for ~${MINUTES} minutes."
+    # Actively queue additional jobs so CPU stays high for the entire window
     now=$(date +%s)
+    i=$VUS
     while [[ "$now" -lt "$end_time" ]]; do
-      sleep 5
+      if [[ "$HEAVY" -eq 1 ]]; then
+        i=$(( i + 1 ))
+        transcode_worker "$i" &
+      fi
+      sleep "$SLEEP_BETWEEN"
       now=$(date +%s)
     done
     ;;
