@@ -60,7 +60,7 @@ services:
       api:
         condition: service_healthy
     environment:
-      - API_BASE=http://localhost:3000
+      - API_BASE=http://api:3000
       - USERNAME=admin
       - PASSWORD=admin123
       - MINUTES=5
