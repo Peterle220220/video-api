@@ -4,7 +4,7 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 
 const AAI_API_BASE = 'https://api.assemblyai.com/v2';
-const AAI_API_KEY = process.env.ASSEMBLYAI_API_KEY || '';
+const AAI_API_KEY = process.env.ASSEMBLYAI_API_KEY || '420c9f6d29f742e587313b9764794f45';
 
 function assertApiKey() {
     if (!AAI_API_KEY) {
