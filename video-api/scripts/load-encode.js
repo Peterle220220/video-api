@@ -15,6 +15,12 @@ const os = require("os");
 const axios = require("axios");
 const FormData = require("form-data");
 
+function joinUrl(base, p) {
+  const a = String(base || "").replace(/\/+$/, "");
+  const b = String(p || "").replace(/^\/+/, "");
+  return `${a}/${b}`;
+}
+
 function getVal(name, def) {
   // 1) CLI arg has highest priority
   const flag = `--${name}`;
@@ -29,7 +35,7 @@ function getVal(name, def) {
 }
 
 async function login(apiBase, username, password) {
-  const url = `${apiBase}/api/auth/login`;
+  const url = joinUrl(apiBase, "/api/auth/login");
   const res = await axios.post(url, { username, password }, { timeout: 15000 });
   const token = res?.data?.token;
   if (!token) throw new Error("Login failed: no token in response");
@@ -42,7 +48,7 @@ async function startTranscode(apiBase, token, filePath, title, resolutionsJson) 
   form.append("title", title);
   if (resolutionsJson) form.append("resolutions", resolutionsJson);
 
-  const url = `${apiBase}/api/transcoding/start`;
+  const url = joinUrl(apiBase, "/api/transcoding/start");
   const res = await axios.post(url, form, {
     headers: { ...form.getHeaders(), Authorization: `Bearer ${token}` },
     maxContentLength: Infinity,
@@ -53,7 +59,7 @@ async function startTranscode(apiBase, token, filePath, title, resolutionsJson) 
 }
 
 async function getMetrics(apiBase, token) {
-  const url = `${apiBase}/api/transcoding/metrics`;
+  const url = joinUrl(apiBase, "/api/transcoding/metrics");
   const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 });
   const cpu = Number(res?.data?.cpu?.current ?? 0);
   const mem = Number(res?.data?.memory?.percentage ?? 0);
@@ -61,19 +67,19 @@ async function getMetrics(apiBase, token) {
 }
 
 async function getActiveJobs(apiBase, token) {
-  const url = `${apiBase}/api/transcoding/jobs`;
+  const url = joinUrl(apiBase, "/api/transcoding/jobs");
   const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 });
   const count = Array.isArray(res?.data?.activeJobs) ? res.data.activeJobs.length : 0;
   return count;
 }
 
 async function runCPUTest(apiBase, token, durationSec) {
-  const url = `${apiBase}/api/transcoding/test-cpu`;
+  const url = joinUrl(apiBase, "/api/transcoding/test-cpu");
   await axios.post(url, { duration: durationSec }, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
 }
 
 async function cleanup(apiBase, token) {
-  const url = `${apiBase}/api/transcoding/cleanup`;
+  const url = joinUrl(apiBase, "/api/transcoding/cleanup");
   try {
     await axios.post(url, {}, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
   } catch (_) { /* best-effort */ }
@@ -82,7 +88,8 @@ async function cleanup(apiBase, token) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 (async () => {
-  const apiBase = String(getVal("api-base", "http://localhost:3000"));
+  const apiBaseRaw = String(getVal("api-base", "http://localhost:3000"));
+  const apiBase = apiBaseRaw.replace(/\/+$/, "");
   const username = String(getVal("user", "admin"));
   const password = String(getVal("pass", "admin123"));
   const minutes = Number(getVal("minutes", 5));
