@@ -97,6 +97,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   const sleepBetween = Number(getVal("sleep", 1000));
   const videoPath = String(getVal("video", path.resolve(__dirname, "../sample.mp4")));
   const heavy = String(getVal("heavy", "0")) === "1"; // default safer (720p/480p)
+  const clientMaxInflight = Number(getVal("client-max-inflight", 2)); // limit parallel requests from this client
 
   // Adaptive throttling settings (override via env/args)
   const targetCPU = Number(getVal("target-cpu", 85)); // % aim to stay around this
@@ -121,8 +122,29 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   let i = 0;
   const resolutions = heavy ? ["1920x1080", "1280x720", "854x480"] : ["1280x720", "854x480"];
   const resolutionsJson = JSON.stringify(resolutions);
+  let inflight = 0;
+  const waiters = [];
+
+  function acquirePermit() {
+    if (inflight < clientMaxInflight) {
+      inflight += 1;
+      return Promise.resolve();
+    }
+    return new Promise(resolve => waiters.push(resolve));
+  }
+
+  function releasePermit() {
+    if (waiters.length > 0) {
+      const next = waiters.shift();
+      next();
+      // inflight unchanged because next holder takes the slot
+    } else {
+      inflight = Math.max(0, inflight - 1);
+    }
+  }
 
   async function worker(workerId) {
+    let lastOverloadLog = 0;
     while (Date.now() < endAt) {
       const n = ++i;
       try {
@@ -135,8 +157,13 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
           if (metrics.cpu >= hardCPU || metrics.mem >= hardMem || jobs >= maxJobs) {
             const reason = metrics.cpu >= hardCPU ? `CPU ${metrics.cpu}%` : metrics.mem >= hardMem ? `MEM ${metrics.mem}%` : `jobs ${jobs}`;
-            const wait = backoffBase * 2;
-            console.warn(`[worker ${workerId}] overloaded (${reason}). Backing off ${wait}ms`);
+            const jitter = Math.floor(Math.random() * backoffBase);
+            const wait = backoffBase + jitter;
+            const now = Date.now();
+            if (now - lastOverloadLog > 5000) {
+              console.warn(`[worker ${workerId}] overloaded (${reason}). Backing off ${wait}ms`);
+              lastOverloadLog = now;
+            }
             await sleep(wait);
             continue; // retry loop
           }
@@ -147,18 +174,25 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
           }
         } catch (_) { /* ignore throttle errors */ }
 
-        if (cpuMode) {
-          await runCPUTest(apiBase, token, Math.max(10, Math.min(60, Math.floor((endAt - Date.now()) / 1000))))
-            .catch(() => { });
-        } else {
-          await startTranscode(apiBase, token, videoPath, `load-${workerId}-${n}`, resolutionsJson);
+        await acquirePermit();
+        try {
+          if (cpuMode) {
+            await runCPUTest(apiBase, token, Math.max(10, Math.min(60, Math.floor((endAt - Date.now()) / 1000))))
+              .catch(() => { });
+          } else {
+            await startTranscode(apiBase, token, videoPath, `load-${workerId}-${n}`, resolutionsJson);
+          }
+        } finally {
+          releasePermit();
         }
       } catch (err) {
         const msg = err?.response?.data?.error || err?.message || String(err);
         console.error(`[worker ${workerId}] request failed: ${msg}`);
         // Exponential-ish backoff on errors
         const code = err?.response?.status || 0;
-        const longBackoff = (code === 429 || code === 503 || code === 413) ? backoffBase * 3 : backoffBase;
+        const isTransport = /ECONNRESET|EPIPE|ETIMEDOUT/.test(String(err?.code || msg));
+        const longBackoff = (code === 429 || code === 503 || code === 413 || isTransport) ? backoffBase * 3 : backoffBase;
+        const jitter = Math.floor(Math.random() * backoffBase);
         await sleep(longBackoff);
       }
       await sleep(sleepBetween);
