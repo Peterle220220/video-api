@@ -6,7 +6,7 @@ const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { getCurrentCPUUsage } = require('../utils/cpuMonitor');
 
- // FFmpeg tunables from environment
+// FFmpeg tunables from environment
 const FFMPEG_PRESET = String(process.env.FFMPEG_PRESET || 'medium');
 const FFMPEG_CRF = String(process.env.FFMPEG_CRF || '23');
 const FFMPEG_FPS = Number(process.env.FFMPEG_FPS || 30);
