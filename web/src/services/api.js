@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const apiBaseUrl = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:3000';
+// Auto-detect backend base URL using current host (EC2 IP/domain) with port 3000 by default.
+// Can be overridden by REACT_APP_API_BASE when needed (e.g., different host/port).
+const { protocol, hostname } = window.location;
+const inferredApiBase = `${protocol}//${hostname}:3000`;
+const apiBaseUrl = inferredApiBase;
 
 export const api = axios.create({
     baseURL: apiBaseUrl,
