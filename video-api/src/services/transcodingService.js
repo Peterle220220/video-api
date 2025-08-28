@@ -2,10 +2,11 @@ const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { getCurrentCPUUsage } = require('../utils/cpuMonitor');
 
- // FFmpeg tunables from environment
+// FFmpeg tunables from environment
 const FFMPEG_PRESET = String(process.env.FFMPEG_PRESET || 'medium');
 const FFMPEG_CRF = String(process.env.FFMPEG_CRF || '23');
 const FFMPEG_FPS = Number(process.env.FFMPEG_FPS || 30);
@@ -61,6 +62,12 @@ class TranscodingService {
         this.activeJobs = new Map();
         this.jobs = new Map(); // jobId -> job data
         this.transcodedByVideoId = new Map(); // videoId -> [transcoded items]
+
+        // Global queue to limit concurrent ffmpeg transcodes across all jobs
+        this.pendingTasks = [];
+        this.runningTasks = 0;
+        const defaultConcurrency = Math.max(1, Math.floor(os.cpus().length / 2));
+        this.maxConcurrentTranscodes = Number(process.env.MAX_CONCURRENT_TRANSCODES || defaultConcurrency);
     }
 
     // Get video information
@@ -92,12 +99,12 @@ class TranscodingService {
             console.log(`🎬 Starting transcoding for video ${videoId} with job ${jobId}`);
             console.log(`📊 Video duration: ${duration}s`);
 
-            // Process each resolution
+            // Enqueue each resolution; queue will respect global concurrency limit
             const transcodingPromises = resolutions.map(resolution =>
-                this.transcodeToResolution(videoId, jobId, inputPath, resolution, duration)
+                this.enqueueTranscode(videoId, jobId, inputPath, resolution, duration)
             );
 
-            // Wait for all transcoding to complete
+            // Wait for all scheduled transcodes to complete
             const results = await Promise.all(transcodingPromises);
 
             // Update job status
@@ -117,6 +124,41 @@ class TranscodingService {
             console.error(`❌ Transcoding failed for job ${jobId}:`, error);
             await this.updateJobStatus(jobId, 'failed', 0, error.message);
             throw error;
+        }
+    }
+
+    // Enqueue a transcode task that will run under global concurrency control
+    enqueueTranscode(videoId, jobId, inputPath, resolution, totalDuration) {
+        return new Promise((resolve, reject) => {
+            const task = async () => {
+                try {
+                    const result = await this.transcodeToResolution(
+                        videoId,
+                        jobId,
+                        inputPath,
+                        resolution,
+                        totalDuration
+                    );
+                    resolve(result);
+                } catch (err) {
+                    reject(err);
+                } finally {
+                    this.runningTasks = Math.max(0, this.runningTasks - 1);
+                    this._tryStartNext();
+                }
+            };
+            this.pendingTasks.push(task);
+            this._tryStartNext();
+        });
+    }
+
+    _tryStartNext() {
+        // Start as many tasks as allowed by maxConcurrentTranscodes
+        while (this.runningTasks < this.maxConcurrentTranscodes && this.pendingTasks.length > 0) {
+            const next = this.pendingTasks.shift();
+            this.runningTasks += 1;
+            // Fire and forget; completion handled inside task
+            Promise.resolve().then(next);
         }
     }
 

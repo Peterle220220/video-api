@@ -4,12 +4,12 @@ const fs = require('fs').promises;
 const fsSync = require('fs');
 
 const AAI_API_BASE = 'https://api.assemblyai.com/v2';
-const AAI_API_KEY = process.env.ASSEMBLYAI_API_KEY || '';
+const AAI_API_KEY = '4b4ee61ef550452fa163d3a484d1d6a2';
 
 function assertApiKey() {
-    if (!AAI_API_KEY) {
-        throw new Error('ASSEMBLYAI_API_KEY is not set');
-    }
+    // if (!AAI_API_KEY) {
+    //     throw new Error('ASSEMBLYAI_API_KEY is not set');
+    // }
 }
 
 async function ensureDir(dirPath) {
@@ -83,7 +83,7 @@ async function extractBestAudio(inputVideoPath, folder) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function uploadToAssemblyAI(filePath) {
-    assertApiKey();
+    // assertApiKey();
     const size = fsSync.statSync(filePath).size;
     const maxAttempts = 3;
     let lastErr;
@@ -120,7 +120,7 @@ async function uploadToAssemblyAI(filePath) {
 }
 
 async function requestTranscription(audioUrl) {
-    assertApiKey();
+    // assertApiKey();
     const payload = {
         audio_url: audioUrl,
         // Auto chapters cannot be enabled together with summarization; keep summarization by default
@@ -152,7 +152,7 @@ async function requestTranscription(audioUrl) {
 }
 
 async function fetchTranscript(transcriptId) {
-    assertApiKey();
+    // assertApiKey();
     const res = await fetch(`${AAI_API_BASE}/transcript/${transcriptId}`, {
         method: 'GET',
         headers: { Authorization: AAI_API_KEY },
