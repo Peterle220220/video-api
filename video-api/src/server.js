@@ -7,6 +7,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const transcodingRoutes = require('./routes/transcoding');
 const videoRoutes = require('./routes/videos');
+const storageRoutes = require('./routes/storage');
 const { startCPUMonitoring } = require('./utils/cpuMonitor');
 const multer = require('multer');
 
@@ -19,14 +20,13 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Static files
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-app.use('/processed', express.static(path.join(__dirname, '../processed')));
+// Static serving removed for stateless design; use S3 presigned URLs instead
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/transcoding', transcodingRoutes);
 app.use('/api/videos', videoRoutes);
+app.use('/api/storage', storageRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {

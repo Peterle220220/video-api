@@ -2,6 +2,8 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
 const { authenticateToken } = require('../middleware/auth');
+const { updateVideoDescription } = require('../services/db/dynamoService');
+const { buildMetaKey, uploadBuffer, presignDownload } = require('../services/storage/s3Service');
 
 const router = express.Router();
 
@@ -9,7 +11,7 @@ async function ensureDir(dirPath) {
     await fs.mkdir(dirPath, { recursive: true });
 }
 
-// Update only description in meta.json (file-based, no DB)
+// Update description: save to DynamoDB and also mirror to S3 meta file if exists
 router.put('/:id/description', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
@@ -19,33 +21,18 @@ router.put('/:id/description', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'description is required and must be a non-empty string' });
         }
 
-        const processedRoot = process.env.PROCESSED_PATH || './processed';
-        const folder = path.join(processedRoot, id);
-        const metaPath = path.join(folder, 'meta.json');
-
-        await ensureDir(folder);
-
-        let meta = {};
-        try {
-            const content = await fs.readFile(metaPath, 'utf-8');
-            meta = JSON.parse(content) || {};
-        } catch (_) {
-            meta = {};
-        }
-
         const trimmed = description.trim();
-        meta.description = trimmed;
-        meta.descriptionUpdatedAt = new Date().toISOString();
-        meta.updatedAt = new Date().toISOString();
+        const updated = await updateVideoDescription(id, trimmed).catch(() => null);
 
-        await fs.writeFile(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
+        // Best-effort: update S3 meta file if present
+        try {
+            const metaObj = Object.assign({}, updated || {}, { description: trimmed, descriptionUpdatedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+            const buf = Buffer.from(JSON.stringify(metaObj, null, 2), 'utf-8');
+            const key = buildMetaKey(id);
+            await uploadBuffer(key, buf, { contentType: 'application/json' });
+        } catch (_) {}
 
-        return res.json({
-            success: true,
-            message: 'Description updated',
-            videoId: id,
-            meta
-        });
+        return res.json({ success: true, message: 'Description updated', videoId: id, meta: updated || { description: trimmed } });
     } catch (error) {
         console.error('Error updating description:', error);
         return res.status(500).json({ error: 'Failed to update description' });

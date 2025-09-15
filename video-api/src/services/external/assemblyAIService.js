@@ -2,19 +2,20 @@ const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const os = require('os');
+const { v4: uuidv4 } = require('uuid');
+const { uploadFileStream, uploadBuffer, buildMetaKey, presignDownload } = require('../storage/s3Service');
 
 const AAI_API_BASE = 'https://api.assemblyai.com/v2';
 const AAI_API_KEY = '4b4ee61ef550452fa163d3a484d1d6a2';
 
 function assertApiKey() {
-    // if (!AAI_API_KEY) {
-    //     throw new Error('ASSEMBLYAI_API_KEY is not set');
-    // }
+    if (!AAI_API_KEY) {
+        console.warn('ASSEMBLYAI_API_KEY is not set');
+    }
 }
 
-async function ensureDir(dirPath) {
-    await fs.mkdir(dirPath, { recursive: true });
-}
+async function ensureDir(dirPath) { await fs.mkdir(dirPath, { recursive: true }); }
 
 async function extractAudioMp3(inputVideoPath, outputAudioPath) {
     return new Promise((resolve, reject) => {
@@ -178,21 +179,34 @@ async function pollTranscriptUntilComplete(transcriptId, options = {}) {
 }
 
 async function writeMetaFile(videoId, meta) {
-    const processedRoot = process.env.PROCESSED_PATH || './processed';
-    const folder = path.join(processedRoot, videoId);
-    await ensureDir(folder);
-    const metaPath = path.join(folder, 'meta.json');
-    await fs.writeFile(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
-    return metaPath;
+    const key = buildMetaKey(videoId);
+    const buf = Buffer.from(JSON.stringify(meta, null, 2), 'utf-8');
+    await uploadBuffer(key, buf, { contentType: 'application/json' });
+    return key;
 }
 
-async function processVideoForSummary(videoId, inputVideoPath) {
+// inputSource: { type: 's3', key } or { type: 'local', path }
+async function processVideoForSummary(videoId, inputSource) {
     try {
-        const processedRoot = process.env.PROCESSED_PATH || './processed';
-        const folder = path.join(processedRoot, videoId);
+        // Resolve input path
+        let inputPath = null;
+        if (inputSource && inputSource.type === 'local' && inputSource.path) {
+            inputPath = inputSource.path;
+        } else if (inputSource && inputSource.type === 's3' && inputSource.key) {
+            // For AAI extraction, prefer to rely on transcoding input path if available locally.
+            // Here we fallback to download via presigned URL and stream to ffmpeg.
+            const url = await presignDownload(inputSource.key);
+            inputPath = url; // ffmpeg can read HTTP input
+        } else if (typeof inputSource === 'string') {
+            inputPath = inputSource;
+        } else {
+            throw new Error('Invalid input source for AssemblyAI');
+        }
+
+        // Extract audio (choose best available format) to temp folder
+        const folder = path.join(os.tmpdir(), `aai_${videoId}_${uuidv4()}`);
         await ensureDir(folder);
-        // Extract audio (choose best available format)
-        const audioPath = await extractBestAudio(inputVideoPath, folder);
+        const audioPath = await extractBestAudio(inputPath, folder);
 
         // Upload and request transcript + summary
         const uploadUrl = await uploadToAssemblyAI(audioPath);
@@ -203,7 +217,7 @@ async function processVideoForSummary(videoId, inputVideoPath) {
             status: 'processing',
             transcriptId,
             uploadUrl,
-            audioPath: `/processed/${videoId}/${path.basename(audioPath)}`,
+            audioPath: `s3://processed/${videoId}/${path.basename(audioPath)}`,
             updatedAt: new Date().toISOString(),
         });
 
@@ -220,7 +234,7 @@ async function processVideoForSummary(videoId, inputVideoPath) {
             text: result.text || null,
             confidence: result.confidence || null,
             words: result.words ? undefined : undefined, // keep file small by default
-            audioPath: `/processed/${videoId}/${path.basename(audioPath)}`,
+            audioPath: `s3://processed/${videoId}/${path.basename(audioPath)}`,
             updatedAt: new Date().toISOString(),
         };
         await writeMetaFile(videoId, meta);

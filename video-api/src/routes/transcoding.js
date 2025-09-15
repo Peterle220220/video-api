@@ -8,6 +8,8 @@ const transcodingService = require('../services/transcodingService');
 const { getCurrentCPUUsage, getCPUUsageHistory, getSystemInfo, getMemoryUsage } = require('../utils/cpuMonitor');
 const { authenticateToken } = require('../middleware/auth');
 const assemblyAI = require('../services/external/assemblyAIService');
+const { listPrefix, presignDownload, buildProcessedKey, buildMetaKey, deletePrefix, headObject, getObjectJson, deleteObject } = require('../services/storage/s3Service');
+const { putVideo, putJob, getJob, updateJob, queryJobsByVideoId, updateVideoDescription } = require('../services/db/dynamoService');
 
 const router = express.Router();
 
@@ -79,20 +81,22 @@ const upload = multer({
     }
 });
 
-// Start transcoding job (no DB)
+// Start transcoding job: supports either direct multipart upload (legacy) or S3 key input
 router.post('/start', authenticateToken, upload.single('video'), async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ error: 'No video file uploaded' });
+        const { title, description, resolutions, s3Key } = req.body;
+        let videoId = uuidv4();
+        let inputSource = null;
+        let filename = null;
+        if (s3Key) {
+            inputSource = { type: 's3', key: String(s3Key) };
+            filename = s3Key.split('/').pop();
+        } else if (req.file) {
+            inputSource = { type: 'local', path: req.file.path };
+            filename = req.file.filename;
+        } else {
+            return res.status(400).json({ error: 'Provide either s3Key or multipart video' });
         }
-
-        const { title, description, resolutions } = req.body;
-        const videoPath = req.file.path;
-        const filename = req.file.filename;
-        const fileSize = req.file.size;
-
-        // Create an in-memory video id
-        const videoId = uuidv4();
 
         // Parse resolutions; default to lower set for small instances
         let resolutionList = ['1280x720', '854x480'];
@@ -107,8 +111,24 @@ router.post('/start', authenticateToken, upload.single('video'), async (req, res
             }
         }
 
-        // Start transcoding in background
-        transcodingService.transcodeVideo(videoId, videoPath, resolutionList)
+        // Create video record in DynamoDB
+        try {
+            await putVideo({
+                video_id: videoId,
+                title: title || filename || 'Untitled',
+                description: description || '',
+                owner: req.user?.id || 'unknown',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+                source: inputSource.type === 's3' ? { s3_key: inputSource.key } : { local: true },
+                resolutions: resolutionList
+            });
+        } catch (e) {
+            console.warn('putVideo failed (continuing):', e?.message || e);
+        }
+
+        // Start transcoding in background (it will handle S3/local inputs)
+        transcodingService.transcodeVideo(videoId, inputSource, resolutionList)
             .then(result => {
                 console.log(`✅ Transcoding completed for video ${videoId}:`, result);
             })
@@ -118,7 +138,7 @@ router.post('/start', authenticateToken, upload.single('video'), async (req, res
 
         // Start background AssemblyAI processing for transcript/summary (best-effort)
         try {
-            assemblyAI.processVideoForSummary(videoId, videoPath)
+            assemblyAI.processVideoForSummary(videoId, inputSource)
                 .then(meta => {
                     console.log(`📝 AssemblyAI summary completed for video ${videoId}`);
                 })
@@ -127,10 +147,11 @@ router.post('/start', authenticateToken, upload.single('video'), async (req, res
                 });
         } catch (_) { /* ignore fire-and-forget errors */ }
 
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
-        const urls = resolutionList.map(r => ({
-            resolution: r,
-            url: `${baseUrl}/processed/${videoId}/${r}.mp4`
+        // Return presigned URLs for expected outputs
+        const urls = await Promise.all(resolutionList.map(async (r) => {
+            const key = buildProcessedKey(videoId, r);
+            const url = await presignDownload(key).catch(() => null);
+            return { resolution: r, url };
         }));
 
         res.json({
@@ -149,11 +170,11 @@ router.post('/start', authenticateToken, upload.single('video'), async (req, res
     }
 });
 
-// Get transcoding job status
+// Get transcoding job status (from DynamoDB)
 router.get('/status/:jobId', authenticateToken, async (req, res) => {
     try {
         const { jobId } = req.params;
-        const jobStatus = await transcodingService.getJobStatus(jobId);
+        const jobStatus = await getJob(jobId);
 
         if (!jobStatus) {
             return res.status(404).json({ error: 'Job not found' });
@@ -163,12 +184,14 @@ router.get('/status/:jobId', authenticateToken, async (req, res) => {
         const cpuUsage = await getCurrentCPUUsage();
 
         // Always include URLs and per-resolution progress for the three target resolutions
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
         const fullResList = ['1920x1080', '1280x720', '854x480'];
         const urls = fullResList.map(r => ({
             resolution: r,
-            url: `${baseUrl}/processed/${jobStatus.video_id}/${r}.mp4`
+            url: null
         }));
+        for (const u of urls) {
+            try { u.url = await presignDownload(buildProcessedKey(jobStatus.video_id, u.resolution)); } catch (_) {}
+        }
 
         const resolutionProgress = fullResList.map(r => {
             const info = (jobStatus.resolution_progress && jobStatus.resolution_progress[r]) || { progress: 0, status: 'pending' };
@@ -176,7 +199,7 @@ router.get('/status/:jobId', authenticateToken, async (req, res) => {
                 resolution: r,
                 progress: Math.max(0, Math.min(100, Number(info.progress) || 0)),
                 status: info.status || 'pending',
-                url: `${baseUrl}/processed/${jobStatus.video_id}/${r}.mp4`
+                url: urls.find(u => u.resolution === r)?.url || null
             };
         });
 
@@ -194,10 +217,12 @@ router.get('/status/:jobId', authenticateToken, async (req, res) => {
     }
 });
 
-// Get all active transcoding jobs
+// Get all active transcoding jobs (processing/pending)
 router.get('/jobs', authenticateToken, async (req, res) => {
     try {
-        const activeJobs = await transcodingService.getActiveJobs();
+        // For simplicity, query by recent videos and statuses is not included here; client often calls status/:id.
+        // Optionally, you can maintain a separate GSI on status.
+        const activeJobs = []; 
         const cpuUsage = await getCurrentCPUUsage();
         const systemInfo = getSystemInfo();
         const memoryUsage = getMemoryUsage();
@@ -260,13 +285,25 @@ router.get('/metrics', authenticateToken, async (req, res) => {
     }
 });
 
-// Get transcoded videos for a specific video (from in-memory store)
+// Get transcoded videos for a specific video (list from S3)
 router.get('/videos/:videoId/transcoded', authenticateToken, async (req, res) => {
     try {
         const { videoId } = req.params;
-
-        const transcodedVideos = (transcodingService.transcodedByVideoId.get(videoId) || [])
-            .sort((a, b) => b.created_at - a.created_at);
+        const prefix = `processed/${videoId}/`;
+        const listed = await listPrefix(prefix);
+        const transcodedVideos = (listed.Contents || [])
+            .filter(o => o.Key.endsWith('.mp4'))
+            .map(o => ({
+                video_id: videoId,
+                resolution: o.Key.replace(prefix, '').replace('.mp4', ''),
+                format: 'mp4',
+                file_path: o.Key,
+                file_size: o.Size,
+                status: 'completed',
+                created_at: o.LastModified,
+                completed_at: o.LastModified
+            }))
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         res.json({
             videoId: videoId,
@@ -279,45 +316,32 @@ router.get('/videos/:videoId/transcoded', authenticateToken, async (req, res) =>
     }
 });
 
-// Video file metadata by videoId and resolution
+// Video file metadata by videoId and resolution (lightweight via S3 HEAD; detailed ffprobe omitted)
 router.get('/metadata/:videoId/:resolution', authenticateToken, async (req, res) => {
     try {
         const { videoId, resolution } = req.params;
-        const processedRoot = process.env.PROCESSED_PATH || './processed';
-        const filePath = path.join(processedRoot, videoId, `${resolution}.mp4`);
+        // We cannot ffprobe S3 directly without downloading; respond with minimal info from S3 key
+        const key = buildProcessedKey(videoId, resolution);
 
-        // Ensure file exists and get size
-        const stats = await fs.stat(filePath);
+        // HEAD to get size and last modified
+        const head = await headObject(key).catch(() => null);
+        const size = head?.ContentLength;
+        const updatedAt = head?.LastModified || new Date().toISOString();
 
-        // Probe metadata
-        const info = await transcodingService.getVideoInfo(filePath);
-        const videoStream = (info?.streams || []).find(s => s.codec_type === 'video') || {};
-        const width = videoStream.width || undefined;
-        const height = videoStream.height || undefined;
-        const fpsStr = videoStream.avg_frame_rate || videoStream.r_frame_rate || '';
-        let fps = undefined;
-        if (fpsStr && fpsStr !== '0/0') {
-            const parts = String(fpsStr).split('/');
-            const num = parseFloat(parts[0]);
-            const den = parseFloat(parts[1] || '1');
-            if (isFinite(num) && isFinite(den) && den !== 0) {
-                fps = Number((num / den).toFixed(2));
-            }
-        }
-        const duration = Number(info?.format?.duration) || undefined;
-        const bitrate = Number(info?.format?.bit_rate) || undefined;
+        // Optional enhancement: download and ffprobe if needed
+        const width = undefined, height = undefined, fps = undefined, duration = undefined, bitrate = undefined;
 
         res.json({
             videoId,
             resolution,
-            size: stats.size,
+            size: size,
             width,
             height,
             fps,
             duration,
             bitrate,
-            path: `/processed/${videoId}/${resolution}.mp4`,
-            updatedAt: stats.mtime
+            s3Key: key,
+            updatedAt
         });
     } catch (error) {
         console.error('Error getting metadata:', error?.message || error);
@@ -398,39 +422,35 @@ router.post('/test-cpu', authenticateToken, async (req, res) => {
 
 module.exports = router;
 
-// List transcoded videos library
+// List transcoded videos library (from S3 prefixes)
 router.get('/library', authenticateToken, async (req, res) => {
     try {
         const pageParam = req.query.page;
         const limitParam = req.query.limit;
         const page = Math.max(1, parseInt(pageParam || '1', 10) || 1);
         const limit = Math.max(1, Math.min(100, parseInt(limitParam || '10', 10) || 10));
-
-        const processedRoot = process.env.PROCESSED_PATH || './processed';
-        await fs.mkdir(processedRoot, { recursive: true });
-
-        const videoIds = (await fs.readdir(processedRoot, { withFileTypes: true }))
-            .filter(d => d.isDirectory())
-            .map(d => d.name);
-
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        // List distinct videoId prefixes under processed/
+        const first = await listPrefix('processed/');
+        const prefixes = new Set();
+        for (const obj of (first.Contents || [])) {
+            const parts = obj.Key.split('/');
+            if (parts.length >= 3) prefixes.add(parts[1]);
+        }
+        const videoIds = Array.from(prefixes);
 
         const items = [];
         for (const videoId of videoIds) {
-            const folder = path.join(processedRoot, videoId);
-            const files = (await fs.readdir(folder)).filter(name => name.endsWith('.mp4'));
-            const resolutions = files.map(name => name.replace('.mp4', ''));
-            const urls = files.map(name => ({
-                resolution: name.replace('.mp4', ''),
-                url: `${baseUrl}/processed/${videoId}/${name}`
-            }));
-            const stats = fsSync.statSync(folder);
-            items.push({
-                videoId,
-                resolutions,
-                urls,
-                updatedAt: stats.mtime
-            });
+            const listed = await listPrefix(`processed/${videoId}/`);
+            const files = (listed.Contents || []).filter(o => o.Key.endsWith('.mp4'));
+            const resolutions = files.map(o => path.basename(o.Key).replace('.mp4', ''));
+            const urls = [];
+            for (const f of files) {
+                const reso = path.basename(f.Key).replace('.mp4', '');
+                let url = null;
+                try { url = await presignDownload(f.Key); } catch (_) {}
+                urls.push({ resolution: reso, url });
+            }
+            items.push({ videoId, resolutions, urls, updatedAt: files[0]?.LastModified || new Date(0) });
         }
 
         // Sort by updated time desc
@@ -468,20 +488,10 @@ router.delete('/videos/:videoId', authenticateToken, async (req, res) => {
         if (!req.user || req.user.username !== 'admin') {
             return res.status(403).json({ error: 'Only admin can delete videos' });
         }
-        const processedRoot = process.env.PROCESSED_PATH || './processed';
-        const folder = path.join(processedRoot, videoId);
-
-        // Remove folder recursively
-        try {
-            await fs.rm(folder, { recursive: true, force: true });
-        } catch (err) {
-            console.warn('Failed to remove folder:', err?.message || err);
-        }
-
-        // Remove in-memory records
-        try {
-            transcodingService.transcodedByVideoId.delete(videoId);
-        } catch (_) { }
+        // Delete all processed objects under this videoId
+        try { await deletePrefix(`processed/${videoId}/`); } catch (err) { console.warn('Failed to delete processed prefix:', err?.message || err); }
+        // Delete meta
+        try { await deleteObject(buildMetaKey(videoId)); } catch (_) {}
 
         res.json({ success: true, message: 'Video deleted' });
     } catch (error) {
@@ -490,17 +500,15 @@ router.delete('/videos/:videoId', authenticateToken, async (req, res) => {
     }
 });
 
-// Get video metadata (summary/transcript) generated by AssemblyAI
+// Get video metadata (summary/transcript) stored in S3 meta/<videoId>.json
 router.get('/videos/:videoId/meta', authenticateToken, async (req, res) => {
     try {
         const { videoId } = req.params;
-        const processedRoot = process.env.PROCESSED_PATH || './processed';
-        const metaPath = path.join(processedRoot, videoId, 'meta.json');
+        const key = buildMetaKey(videoId);
         try {
-            const content = await fs.readFile(metaPath, 'utf-8');
-            const json = JSON.parse(content);
-            return res.json({ videoId, meta: json });
-        } catch (err) {
+            const url = await presignDownload(key);
+            return res.json({ videoId, metaUrl: url });
+        } catch (_) {
             return res.status(404).json({ error: 'Metadata not found' });
         }
     } catch (error) {

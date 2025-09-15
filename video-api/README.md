@@ -14,7 +14,7 @@ A RESTful API for video streaming with CPU‑intensive transcoding (>80%) to str
 ## 🛠️ Technology Stack
 
 - **Backend**: Node.js + Express.js
-- **Data Storage**: In-memory (no DB)
+- **Data Storage**: S3 + DynamoDB (stateless)
 - **Video Processing**: FFmpeg
 - **Authentication**: JWT
 - **Containerization**: Docker + Docker Compose
@@ -80,11 +80,13 @@ npm run dev
 
 ### Video Management
 
-Removed in this demo (no database)
+Now uses AWS S3 and DynamoDB (no local filesystem dependency)
 
 ### Transcoding (CPU-Intensive)
 
-- `POST /api/transcoding/start` - Start video transcoding
+- `POST /api/storage/presign-upload` - Get pre-signed URL to upload to S3
+- `POST /api/storage/presign-download` - Get pre-signed URL to download from S3
+- `POST /api/transcoding/start` - Start video transcoding (supports `s3Key` or multipart upload)
 - `GET /api/transcoding/status/:jobId` - Check job status
 - `GET /api/transcoding/jobs` - Get list of active jobs
 - `DELETE /api/transcoding/cancel/:jobId` - Cancel a job
@@ -161,7 +163,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 
 ### Accounts
 
-Accounts are configured in `src/config/accounts.js`.
+Auth is being migrated to Cognito in Assessment 2.
 
 ## 🐳 Docker Commands
 
@@ -302,7 +304,7 @@ brew install ffmpeg
 # Download from https://ffmpeg.org/download.html
 ```
 
-Database and Redis have been removed in this demo.
+Filesystem persistence removed. All persistent data stored in AWS services.
 
 ### High CPU usage expected
 
