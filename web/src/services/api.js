@@ -21,6 +21,8 @@ api.interceptors.request.use((config) => {
 export const endpoints = {
     auth: {
         login: '/api/auth/login',
+        register: '/api/auth/register',
+        confirm: '/api/auth/confirm',
         profile: '/api/auth/profile',
         test: '/api/auth/test',
     },

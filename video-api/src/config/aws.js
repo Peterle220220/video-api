@@ -11,6 +11,7 @@ const DDB_TABLE = process.env.DDB_TABLE || process.env.DDB_TABLE_MAIN || 'cab432
 // Cognito configuration
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || 'ap-southeast-2_wgTgFFTuB';
 const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '1o00oog3qb82t1qgvi62lfv9fa';
+const COGNITO_CLIENT_SECRET = process.env.COGNITO_CLIENT_SECRET || '1oftmplton69rcfvg4egrme6ia2vkheebc9u7u1im9l6gqdf48ql';
 const COGNITO_JWKS_URI = COGNITO_USER_POOL_ID
     ? `https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_wgTgFFTuB/.well-known/jwks.json`
     : '';
@@ -40,6 +41,10 @@ module.exports = {
     DDB_TABLE_VIDEOS,
     DDB_TABLE_JOBS,
     DDB_JOBS_GSI_VIDEO_ID,
+    COGNITO_USER_POOL_ID,
+    COGNITO_CLIENT_ID,
+    COGNITO_CLIENT_SECRET,
+    COGNITO_JWKS_URI,
     s3Client,
     ddbClient,
     assertConfig

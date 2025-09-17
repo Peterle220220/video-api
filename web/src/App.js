@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Videos from './pages/Videos';
 import ProtectedRoute from './routes/ProtectedRoute';
 import './styles/app.css';
+import Register from './pages/Register';
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/videos" replace />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route
           path="/videos"

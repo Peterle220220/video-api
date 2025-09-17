@@ -1,82 +1,85 @@
 const express = require('express');
-const { generateToken } = require('../middleware/auth');
-const accounts = require('../config/accounts');
+const { signUp, confirmSignUp, login: cognitoLogin, verifyJwt } = require('../services/external/cognitoService');
 
 const router = express.Router();
 
-// Registration disabled (no database)
+// Sign up via Cognito (optional for demo; can be disabled by env)
 router.post('/register', async (req, res) => {
-    return res.status(400).json({ error: 'Registration is disabled in this demo' });
-});
-
-// Login with hard-coded username and password (no database)
-router.post('/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
-
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password are required' });
+        const { username, password, email } = req.body || {};
+        if (!username || !password || !email) {
+            return res.status(400).json({ error: 'username, password, email are required' });
         }
-
-        const found = accounts.find(acc => acc.username === username && acc.password === password);
-        if (!found) {
-            return res.status(401).json({ error: 'Invalid username or password' });
-        }
-
-        const token = generateToken({
-            userId: found.id,
-            username: found.username,
-            email: found.email
-        });
-
-        res.json({
+        const result = await signUp({ username, password, email });
+        return res.json({
             success: true,
-            message: 'Login successful',
-            user: {
-                id: found.id,
-                username: found.username,
-                email: found.email,
-            },
-            token: token
+            message: 'Sign up initiated',
+            userConfirmed: !!result?.UserConfirmed,
+            codeDelivery: result?.CodeDeliveryDetails || null
         });
-
-    } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ error: 'Login failed' });
+    } catch (err) {
+        console.error('Register error:', err);
+        return res.status(400).json({ error: err?.message || 'Register failed' });
     }
 });
 
-// Get current user profile (from token only)
+// Login via Cognito
+router.post('/login', async (req, res) => {
+    try {
+        const { username, password } = req.body || {};
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required' });
+        }
+        const tokens = await cognitoLogin({ username, password });
+        if (!tokens || !tokens.idToken) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        return res.json({
+            success: true,
+            message: 'Login successful',
+            user: { username },
+            tokens
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        return res.status(401).json({ error: error?.message || 'Login failed' });
+    }
+});
+
+// Confirm sign up via Cognito
+router.post('/confirm', async (req, res) => {
+    try {
+        const { username, code } = req.body || {};
+        if (!username || !code) {
+            return res.status(400).json({ error: 'username and code are required' });
+        }
+        await confirmSignUp({ username, code });
+        return res.json({ success: true, message: 'Account confirmed' });
+    } catch (error) {
+        console.error('Confirm sign up error:', error);
+        return res.status(400).json({ error: error?.message || 'Confirmation failed' });
+    }
+});
+
+// Get current user profile using Cognito JWT
 router.get('/profile', async (req, res) => {
     try {
         const token = req.headers.authorization?.split(' ')[1];
-
         if (!token) {
             return res.status(401).json({ error: 'Token required' });
         }
-
-        const jwt = require('jsonwebtoken');
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret');
-
-        res.json({
+        const decoded = await verifyJwt(token);
+        return res.json({
             success: true,
             user: {
-                id: decoded.userId,
-                username: decoded.username,
+                id: decoded.sub,
+                username: decoded['cognito:username'] || decoded.username || decoded.email,
                 email: decoded.email,
-                role: decoded.role
+                groups: decoded['cognito:groups'] || []
             }
         });
-
     } catch (error) {
-        if (error.name === 'JsonWebTokenError') {
-            return res.status(401).json({ error: 'Invalid token' });
-        }
-        if (error.name === 'TokenExpiredError') {
-            return res.status(401).json({ error: 'Token expired' });
-        }
-        console.error('Profile error:', error);
-        res.status(500).json({ error: 'Failed to get profile' });
+        return res.status(401).json({ error: 'Invalid or expired token' });
     }
 });
 
