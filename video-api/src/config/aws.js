@@ -9,10 +9,10 @@ const QUT_USERNAME = process.env.QUT_USERNAME || 'n12122882@qut.edu.au';
 const DDB_TABLE = process.env.DDB_TABLE || process.env.DDB_TABLE_MAIN || 'cab432-a2-n12122882-metadata';
 
 // Cognito configuration
-const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || '';
-const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '';
+const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || 'ap-southeast-2_wgTgFFTuB';
+const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '1o00oog3qb82t1qgvi62lfv9fa';
 const COGNITO_JWKS_URI = COGNITO_USER_POOL_ID
-    ? `https://cognito-idp.${AWS_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}/.well-known/jwks.json`
+    ? `https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_wgTgFFTuB/.well-known/jwks.json`
     : '';
 
 // DynamoDB tables

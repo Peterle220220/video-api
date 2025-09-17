@@ -13,12 +13,16 @@ export default function Login() {
 		e.preventDefault();
 		setError('');
 		setLoading(true);
-		try {
-			const res = await api.post(endpoints.auth.login, { username, password });
-			localStorage.setItem('token', res.data.token);
-			localStorage.setItem('user', JSON.stringify(res.data.user));
-			navigate('/videos');
-		} catch (err) {
+        try {
+            const res = await api.post(endpoints.auth.login, { username, password });
+            const tokens = res?.data?.tokens;
+            if (!tokens || !tokens.idToken) throw new Error('Invalid tokens');
+            localStorage.setItem('token', tokens.idToken);
+            // Optional: store access/refresh if you want later use
+            localStorage.setItem('cognitoTokens', JSON.stringify(tokens));
+            localStorage.setItem('user', JSON.stringify({ username }));
+            navigate('/videos');
+        } catch (err) {
 			setError(err?.response?.data?.error || 'Login failed');
 		} finally {
 			setLoading(false);
