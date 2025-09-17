@@ -295,24 +295,33 @@ export default function Videos() {
 		setUploadProgress(0);
 		setTranscodeProgress(0);
 		setTranscodeStatus('idle');
-		try {
-			const form = new FormData();
-			form.append('video', uploadFile);
-			form.append('title', uploadFile.name);
-			form.append('description', 'Uploaded via web UI');
-			// Optional: specify resolutions
-			form.append('resolutions', JSON.stringify(expectedResolutions));
+    try {
+        // 1) Request presigned URL to upload directly to S3
+        const presign = await api.post(endpoints.storage.presignUpload, {
+            filename: uploadFile.name,
+            contentType: uploadFile.type || 'application/octet-stream',
+        });
+        const s3Key = presign?.data?.key;
+        const uploadUrl = presign?.data?.uploadUrl;
+        if (!s3Key || !uploadUrl) throw new Error('Failed to get presigned URL');
 
-			const res = await api.post(endpoints.transcoding.start, form, {
-				onUploadProgress: (evt) => {
-					if (!evt.total) return;
-					const percent = Math.round((evt.loaded * 100) / evt.total);
-					setUploadProgress(percent);
-				},
-				headers: { 'Content-Type': 'multipart/form-data' },
-			});
-			const videoId = res?.data?.videoId;
-			const initialUrls = Array.isArray(res?.data?.urls) ? res.data.urls : [];
+        // 2) Upload file to S3 via PUT
+        await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': uploadFile.type || 'application/octet-stream' },
+            body: uploadFile,
+        });
+        setUploadProgress(100);
+
+        // 3) Start transcoding by S3 key
+        const res = await api.post(endpoints.transcoding.start, {
+            s3Key: s3Key,
+            title: uploadFile.name,
+            description: 'Uploaded via web UI',
+            resolutions: JSON.stringify(expectedResolutions),
+        });
+        const videoId = res?.data?.videoId;
+        const initialUrls = Array.isArray(res?.data?.urls) ? res.data.urls : [];
 			if (videoId) {
 				currentVideoIdRef.current = videoId;
 				currentJobIdRef.current = '';

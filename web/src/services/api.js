@@ -24,6 +24,10 @@ export const endpoints = {
         profile: '/api/auth/profile',
         test: '/api/auth/test',
     },
+    storage: {
+        presignUpload: '/api/storage/presign-upload',
+        presignDownload: '/api/storage/presign-download',
+    },
     transcoding: {
         start: '/api/transcoding/start',
         jobs: '/api/transcoding/jobs',
