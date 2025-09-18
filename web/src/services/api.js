@@ -44,10 +44,6 @@ export const endpoints = {
     videos: {
         updateDescription: (videoId) => `/api/videos/${videoId}/description`,
     },
-    staticPaths: {
-        processed: (filename) => `${apiBaseUrl}/processed/${filename}`,
-        uploads: (filename) => `${apiBaseUrl}/uploads/${filename}`,
-    },
 };
 
 
