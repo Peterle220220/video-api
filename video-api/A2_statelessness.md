@@ -38,11 +38,11 @@ This document explains how the `video-api` service now adheres to stateless desi
 
 ## Validation steps
 
-1) Upload via presigned URL, then start a transcode by `s3Key`.
-2) During transcode, restart the API container.
-3) Call `GET /api/transcoding/status/:jobId` → job should be `failed` after restart.
-4) Re-start the job; new outputs appear under the same `processed/<videoId>/` S3 prefix.
-5) Library and metadata endpoints return presigned download URLs that work without local static hosting.
+1. Upload via presigned URL, then start a transcode by `s3Key`.
+2. During transcode, restart the API container.
+3. Call `GET /api/transcoding/status/:jobId` → job should be `failed` after restart.
+4. Re-start the job; new outputs appear under the same `processed/<videoId>/` S3 prefix.
+5. Library and metadata endpoints return presigned download URLs that work without local static hosting.
 
 ## Notes
 

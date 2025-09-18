@@ -114,7 +114,7 @@ router.get('/status/:jobId', authenticateToken, async (req, res) => {
             url: null
         }));
         for (const u of urls) {
-            try { u.url = await presignDownload(buildProcessedKey(jobStatus.video_id, u.resolution)); } catch (_) {}
+            try { u.url = await presignDownload(buildProcessedKey(jobStatus.video_id, u.resolution)); } catch (_) { }
         }
 
         const resolutionProgress = fullResList.map(r => {
@@ -216,7 +216,7 @@ router.get('/videos/:videoId/transcoded', authenticateToken, async (req, res) =>
         const files = (listed.Contents || []).filter(o => o.Key.endsWith('.mp4'));
         const transcodedVideos = (await Promise.all(files.map(async (o) => {
             let url = null;
-            try { url = await presignDownload(o.Key); } catch (_) {}
+            try { url = await presignDownload(o.Key); } catch (_) { }
             return {
                 video_id: videoId,
                 resolution: o.Key.replace(prefix, '').replace('.mp4', ''),
@@ -372,7 +372,7 @@ router.get('/library', authenticateToken, async (req, res) => {
             for (const f of files) {
                 const reso = path.basename(f.Key).replace('.mp4', '');
                 let url = null;
-                try { url = await presignDownload(f.Key); } catch (_) {}
+                try { url = await presignDownload(f.Key); } catch (_) { }
                 urls.push({ resolution: reso, url });
             }
             items.push({ videoId, resolutions, urls, updatedAt: files[0]?.LastModified || new Date(0) });
@@ -416,7 +416,7 @@ router.delete('/videos/:videoId', authenticateToken, async (req, res) => {
         // Delete all processed objects under this videoId
         try { await deletePrefix(`processed/${videoId}/`); } catch (err) { console.warn('Failed to delete processed prefix:', err?.message || err); }
         // Delete meta
-        try { await deleteObject(buildMetaKey(videoId)); } catch (_) {}
+        try { await deleteObject(buildMetaKey(videoId)); } catch (_) { }
 
         res.json({ success: true, message: 'Video deleted' });
     } catch (error) {

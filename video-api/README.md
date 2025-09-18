@@ -210,16 +210,16 @@ curl -X POST http://localhost:3000/api/auth/login \
 Edit the `load` service in `docker-compose.yml` to set `AUTH_TOKEN` using the token above (or export it when running k6 manually).
 
 ```yaml
-  load:
-    image: grafana/k6:0.49.0
-    environment:
-      - API_BASE=http://api:3000
-      - AUTH_TOKEN=REPLACE_WITH_YOUR_TOKEN
-      - TEST_DURATION=5m
-      - VUS=25
-    volumes:
-      - ./scripts:/scripts
-    entrypoint: ["k6", "run", "/scripts/test-cpu.js"]
+load:
+  image: grafana/k6:0.49.0
+  environment:
+    - API_BASE=http://api:3000
+    - AUTH_TOKEN=REPLACE_WITH_YOUR_TOKEN
+    - TEST_DURATION=5m
+    - VUS=25
+  volumes:
+    - ./scripts:/scripts
+  entrypoint: ["k6", "run", "/scripts/test-cpu.js"]
 ```
 
 Start:
@@ -252,6 +252,7 @@ docker run --rm -it \
 ```
 
 Notes:
+
 - `VUS` controls the number of virtual users; 20–40 is usually enough to keep CPU >80% with the `test-cpu` endpoint (each request triggers a 300s compute loop on the server).
 - Network headroom: the endpoint only sends/receives small JSON ⇒ low bandwidth, leaving enough headroom to scale out to ≥3 servers.
 
@@ -292,9 +293,12 @@ video-api/
 
 - `PORT`: Server port (default: 3000)
 - `JWT_SECRET`: JWT secret key
+
 # Removed in stateless deployment
+
 #- `UPLOAD_PATH`: Video upload directory
 #- `PROCESSED_PATH`: Transcoded video directory
+
 - `MAX_FILE_SIZE`: Maximum file size
 - `CPU_MONITORING_INTERVAL`: CPU monitoring interval (ms)
 
