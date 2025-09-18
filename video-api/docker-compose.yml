@@ -8,8 +8,9 @@ services:
       - PORT=3000
       - JWT_SECRET=your-super-secret-jwt-key-change-in-production
       - JWT_EXPIRES_IN=24h
-      - UPLOAD_PATH=./uploads
-      - PROCESSED_PATH=./processed
+      # Local paths removed to promote statelessness; use S3 for persistence
+      # - UPLOAD_PATH=./uploads
+      # - PROCESSED_PATH=./processed
       - MAX_FILE_SIZE=500MB
       - CPU_MONITORING_INTERVAL=1000
       - FFMPEG_THREADS=2
@@ -20,9 +21,10 @@ services:
       - ASSEMBLYAI_API_KEY=f0f4e03646a543b4bc994995021222b0
     ports:
       - "3000:3000"
-    volumes:
-      - ./uploads:/app/uploads
-      - ./processed:/app/processed
+    # Remove bind mounts to avoid local persistent state
+    # volumes:
+    #   - ./uploads:/app/uploads
+    #   - ./processed:/app/processed
     depends_on: {}
     healthcheck:
       test:

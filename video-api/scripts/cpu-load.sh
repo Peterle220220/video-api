@@ -42,7 +42,7 @@ Examples:
   # CPU mode (minimal network), 5 minutes, ~30 workers
   $(basename "$0") --mode cpu --vus 30 --minutes 5
 
-  # Transcode mode with a small local file (requires ffmpeg threads>=2 to push >80%)
+  # Transcode mode using local file upload (legacy). Prefer presigned S3 flow in web UI.
   $(basename "$0") --mode transcode --video ./tiny.mp4 --vus 3 --minutes 5
 
   # Force ~100% CPU for ~5 minutes using heavy transcode (keeps queueing)
@@ -128,11 +128,27 @@ cpu_worker() {
 
 transcode_worker() {
   local i="$1"
-  curl -s -X POST "${API_BASE}/api/transcoding/start" \
+  # New stateless flow: presign upload, PUT to S3, then start by s3Key
+  local presign
+  presign=$(curl -s -X POST "${API_BASE}/api/storage/presign-upload" \
+    -H 'Content-Type: application/json' \
     -H "Authorization: Bearer ${TOKEN}" \
-    -F "video=@${VIDEO_PATH}" \
-    -F "title=load-$i" \
-    -F "resolutions=${RESOLUTIONS}" >/dev/null || true
+    -d "$(printf '{\"filename\":\"%s\",\"contentType\":\"%s\"}' "$(basename "$VIDEO_PATH")" "video/mp4")") || true
+  local key url
+  if command -v jq >/dev/null 2>&1; then
+    key=$(echo "$presign" | jq -r .key)
+    url=$(echo "$presign" | jq -r .uploadUrl)
+  else
+    key=$(echo "$presign" | sed -n 's/.*"key"\s*:\s*"\([^"]*\)".*/\1/p')
+    url=$(echo "$presign" | sed -n 's/.*"uploadUrl"\s*:\s*"\([^"]*\)".*/\1/p')
+  fi
+  if [[ -n "$key" && -n "$url" ]]; then
+    curl -s -X PUT "$url" -H 'Content-Type: video/mp4' --data-binary @"$VIDEO_PATH" >/dev/null || true
+    curl -s -X POST "${API_BASE}/api/transcoding/start" \
+      -H 'Content-Type: application/json' \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -d "$(printf '{\"s3Key\":\"%s\",\"title\":\"load-%s\",\"resolutions\":%s}' "$key" "$i" "$RESOLUTIONS")" >/dev/null || true
+  fi
 }
 
 start_time=$(date +%s)

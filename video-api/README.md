@@ -8,7 +8,7 @@ A RESTful API for video streaming with CPU‑intensive transcoding (>80%) to str
 - **CPU-Intensive Transcoding**: Convert videos to multiple resolutions using FFmpeg
 - **Real-time CPU Monitoring**: Track CPU usage during transcoding
 - **Authentication & Authorization**: JWT-based authentication
-- **No Database Required**: In-memory job and account config
+- **Cloud Persistence**: All persistent state in S3 + DynamoDB (stateless API)
 - **Containerization**: Docker and Docker Compose
 
 ## 🛠️ Technology Stack
@@ -86,7 +86,7 @@ Now uses AWS S3 and DynamoDB (no local filesystem dependency)
 
 - `POST /api/storage/presign-upload` - Get pre-signed URL to upload to S3
 - `POST /api/storage/presign-download` - Get pre-signed URL to download from S3
-- `POST /api/transcoding/start` - Start video transcoding (supports `s3Key` or multipart upload)
+- `POST /api/transcoding/start` - Start video transcoding (requires `s3Key`, use presigned upload)
 - `GET /api/transcoding/status/:jobId` - Check job status
 - `GET /api/transcoding/jobs` - Get list of active jobs
 - `DELETE /api/transcoding/cancel/:jobId` - Cancel a job
@@ -104,12 +104,20 @@ Now uses AWS S3 and DynamoDB (no local filesystem dependency)
 The API will use **80–95% CPU** when transcoding video:
 
 ```bash
-# Start transcoding
+# 1) Presign upload
+curl -X POST http://localhost:3000/api/storage/presign-upload \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"sample.mp4","contentType":"video/mp4"}'
+
+# 2) PUT file to returned uploadUrl
+curl -X PUT "UPLOAD_URL_FROM_STEP_1" -H 'Content-Type: video/mp4' --data-binary @sample.mp4
+
+# 3) Start transcoding by s3Key
 curl -X POST http://localhost:3000/api/transcoding/start \
   -H "Authorization: Bearer YOUR_TOKEN" \
-  -F "video=@sample.mp4" \
-  -F "title=Sample Video" \
-  -F "resolutions=[\"1920x1080\",\"1280x720\",\"854x480\"]"
+  -H "Content-Type: application/json" \
+  -d '{"s3Key":"uploads/1699999999999_sample.mp4","resolutions":["1920x1080","1280x720","854x480"]}'
 ```
 
 ### CPU Test
@@ -270,8 +278,8 @@ video-api/
 │   ├── utils/
 │   │   └── cpuMonitor.js    # CPU monitoring utilities
 │   └── server.js            # Main server file
-├── uploads/                 # Uploaded video files
-├── processed/               # Transcoded video files
+├── uploads/                 # (Local dev only; not used in stateless deployment)
+├── processed/               # (Local dev only; not used in stateless deployment)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── package.json
@@ -284,8 +292,9 @@ video-api/
 
 - `PORT`: Server port (default: 3000)
 - `JWT_SECRET`: JWT secret key
-- `UPLOAD_PATH`: Video upload directory
-- `PROCESSED_PATH`: Transcoded video directory
+# Removed in stateless deployment
+#- `UPLOAD_PATH`: Video upload directory
+#- `PROCESSED_PATH`: Transcoded video directory
 - `MAX_FILE_SIZE`: Maximum file size
 - `CPU_MONITORING_INTERVAL`: CPU monitoring interval (ms)
 

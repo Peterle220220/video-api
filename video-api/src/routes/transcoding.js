@@ -1,102 +1,26 @@
 const express = require('express');
-const multer = require('multer');
 const path = require('path');
-const fs = require('fs').promises;
-const fsSync = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const transcodingService = require('../services/transcodingService');
 const { getCurrentCPUUsage, getCPUUsageHistory, getSystemInfo, getMemoryUsage } = require('../utils/cpuMonitor');
 const { authenticateToken } = require('../middleware/auth');
 const assemblyAI = require('../services/external/assemblyAIService');
 const { listPrefix, presignDownload, buildProcessedKey, buildMetaKey, deletePrefix, headObject, getObjectJson, deleteObject } = require('../services/storage/s3Service');
-const { putVideo, putJob, getJob, updateJob, queryJobsByVideoId, updateVideoDescription } = require('../services/db/dynamoService');
+const { putVideo, getJob, queryJobsByVideoId, updateJob } = require('../services/db/dynamoService');
+const { listActiveJobs } = require('../services/db/dynamoService');
 
 const router = express.Router();
 
-// Helper: parse human-readable size (e.g., 500MB, 1GB, 1048576) to bytes
-function parseFileSizeToBytes(value) {
-    if (!value) return 500 * 1024 * 1024; // default 500MB
-    if (typeof value === 'number') return value;
-    const str = String(value).trim();
-    // If pure number, treat as bytes
-    if (/^\d+$/.test(str)) return parseInt(str, 10);
-    const match = str.match(/^(\d+(?:\.\d+)?)\s*(kb|kib|k|mb|mib|m|gb|gib|g|tb|tib|t)$/i);
-    if (!match) return 500 * 1024 * 1024;
-    const num = parseFloat(match[1]);
-    const unit = match[2].toLowerCase();
-    const KB = 1024;
-    const MB = KB * 1024;
-    const GB = MB * 1024;
-    const TB = GB * 1024;
-    switch (unit) {
-        case 'kb':
-        case 'kib':
-        case 'k':
-            return Math.floor(num * KB);
-        case 'mb':
-        case 'mib':
-        case 'm':
-            return Math.floor(num * MB);
-        case 'gb':
-        case 'gib':
-        case 'g':
-            return Math.floor(num * GB);
-        case 'tb':
-        case 'tib':
-        case 't':
-            return Math.floor(num * TB);
-        default:
-            return 500 * 1024 * 1024;
-    }
-}
-
-// Configure multer for video upload
-const storage = multer.diskStorage({
-    destination: async (req, file, cb) => {
-        const uploadPath = process.env.UPLOAD_PATH || './uploads';
-        await fs.mkdir(uploadPath, { recursive: true });
-        cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-        const uniqueName = `${uuidv4()}_${Date.now()}${path.extname(file.originalname)}`;
-        cb(null, uniqueName);
-    }
-});
-
-const upload = multer({
-    storage: storage,
-    limits: {
-        fileSize: parseFileSizeToBytes(process.env.MAX_FILE_SIZE)
-    },
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = /mp4|avi|mov|mkv|wmv|flv|webm/;
-        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-        const mimetype = allowedTypes.test(file.mimetype);
-
-        if (mimetype && extname) {
-            return cb(null, true);
-        } else {
-            cb(new Error('Only video files are allowed!'));
-        }
-    }
-});
-
 // Start transcoding job: supports either direct multipart upload (legacy) or S3 key input
-router.post('/start', authenticateToken, upload.single('video'), async (req, res) => {
+router.post('/start', authenticateToken, async (req, res) => {
     try {
         const { title, description, resolutions, s3Key } = req.body;
         let videoId = uuidv4();
-        let inputSource = null;
-        let filename = null;
-        if (s3Key) {
-            inputSource = { type: 's3', key: String(s3Key) };
-            filename = s3Key.split('/').pop();
-        } else if (req.file) {
-            inputSource = { type: 'local', path: req.file.path };
-            filename = req.file.filename;
-        } else {
-            return res.status(400).json({ error: 'Provide either s3Key or multipart video' });
+        if (!s3Key) {
+            return res.status(400).json({ error: 's3Key is required. Upload the file to S3 using a presigned URL, then call this endpoint.' });
         }
+        const inputSource = { type: 's3', key: String(s3Key) };
+        const filename = String(s3Key).split('/').pop();
 
         // Parse resolutions; default to lower set for small instances
         let resolutionList = ['1280x720', '854x480'];
@@ -120,7 +44,7 @@ router.post('/start', authenticateToken, upload.single('video'), async (req, res
                 owner: req.user?.id || 'unknown',
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
-                source: inputSource.type === 's3' ? { s3_key: inputSource.key } : { local: true },
+                source: { s3_key: inputSource.key },
                 resolutions: resolutionList
             });
         } catch (e) {
@@ -220,9 +144,7 @@ router.get('/status/:jobId', authenticateToken, async (req, res) => {
 // Get all active transcoding jobs (processing/pending)
 router.get('/jobs', authenticateToken, async (req, res) => {
     try {
-        // For simplicity, query by recent videos and statuses is not included here; client often calls status/:id.
-        // Optionally, you can maintain a separate GSI on status.
-        const activeJobs = []; 
+        const activeJobs = await listActiveJobs();
         const cpuUsage = await getCurrentCPUUsage();
         const systemInfo = getSystemInfo();
         const memoryUsage = getMemoryUsage();
@@ -291,9 +213,11 @@ router.get('/videos/:videoId/transcoded', authenticateToken, async (req, res) =>
         const { videoId } = req.params;
         const prefix = `processed/${videoId}/`;
         const listed = await listPrefix(prefix);
-        const transcodedVideos = (listed.Contents || [])
-            .filter(o => o.Key.endsWith('.mp4'))
-            .map(o => ({
+        const files = (listed.Contents || []).filter(o => o.Key.endsWith('.mp4'));
+        const transcodedVideos = (await Promise.all(files.map(async (o) => {
+            let url = null;
+            try { url = await presignDownload(o.Key); } catch (_) {}
+            return {
                 video_id: videoId,
                 resolution: o.Key.replace(prefix, '').replace('.mp4', ''),
                 format: 'mp4',
@@ -301,9 +225,10 @@ router.get('/videos/:videoId/transcoded', authenticateToken, async (req, res) =>
                 file_size: o.Size,
                 status: 'completed',
                 created_at: o.LastModified,
-                completed_at: o.LastModified
-            }))
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                completed_at: o.LastModified,
+                url
+            };
+        }))).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         res.json({
             videoId: videoId,

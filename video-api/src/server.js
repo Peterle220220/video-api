@@ -10,6 +10,7 @@ const videoRoutes = require('./routes/videos');
 const storageRoutes = require('./routes/storage');
 const { startCPUMonitoring } = require('./utils/cpuMonitor');
 const multer = require('multer');
+const { failInFlightJobsOnStartup } = require('./services/db/dynamoService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -71,6 +72,14 @@ async function startServer() {
         // Start CPU monitoring
         startCPUMonitoring();
         console.log('✅ CPU monitoring started');
+
+        // Crash-safety: mark in-flight jobs as failed on startup (stateless readiness)
+        try {
+            const count = await failInFlightJobsOnStartup('Service restarted');
+            if (count > 0) console.log(`🧹 Marked ${count} in-flight job(s) as failed on startup`);
+        } catch (e) {
+            console.warn('Startup job reconciliation failed:', e?.message || e);
+        }
 
         // Start server
         app.listen(PORT, () => {

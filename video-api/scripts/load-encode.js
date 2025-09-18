@@ -43,16 +43,32 @@ async function login(apiBase, username, password) {
 }
 
 async function startTranscode(apiBase, token, filePath, title, resolutionsJson) {
-  const form = new FormData();
-  form.append("video", fs.createReadStream(filePath));
-  form.append("title", title);
-  if (resolutionsJson) form.append("resolutions", resolutionsJson);
+  // Stateless flow: request presigned URL → PUT file to S3 → start by s3Key
+  const presignUrl = joinUrl(apiBase, "/api/storage/presign-upload");
+  const presign = await axios.post(
+    presignUrl,
+    { filename: path.basename(filePath), contentType: "video/mp4" },
+    { headers: { Authorization: `Bearer ${token}` }, timeout: 20000 }
+  );
+  const s3Key = presign?.data?.key;
+  const uploadUrl = presign?.data?.uploadUrl;
+  if (!s3Key || !uploadUrl) throw new Error("presign failed");
 
-  const url = joinUrl(apiBase, "/api/transcoding/start");
-  const res = await axios.post(url, form, {
-    headers: { ...form.getHeaders(), Authorization: `Bearer ${token}` },
+  // Upload to S3
+  const data = fs.createReadStream(filePath);
+  await axios.put(uploadUrl, data, {
+    headers: { "Content-Type": "video/mp4" },
     maxContentLength: Infinity,
     maxBodyLength: Infinity,
+    timeout: 300000,
+  });
+
+  // Start transcoding by s3Key
+  const url = joinUrl(apiBase, "/api/transcoding/start");
+  const payload = { s3Key, title };
+  if (resolutionsJson) payload.resolutions = resolutionsJson;
+  const res = await axios.post(url, payload, {
+    headers: { Authorization: `Bearer ${token}` },
     timeout: 120000,
   });
   return res?.data;

@@ -112,6 +112,34 @@ async function deleteJob(jobId) {
     }));
 }
 
+// List jobs currently in-flight (status = processing or pending)
+async function listActiveJobs() {
+    const res = await docClient.send(new QueryCommand({
+        TableName: DDB_TABLE,
+        KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
+        ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk', '#status': 'status' },
+        ExpressionAttributeValues: { ':u': QUT_USERNAME, ':jobPrefix': 'JOB#', ':processing': 'processing', ':pending': 'pending' },
+        FilterExpression: '#status IN (:processing, :pending)'
+    }));
+    return res.Items || [];
+}
+
+// On startup, mark any in-flight jobs as failed (crash-safe, stateless)
+async function failInFlightJobsOnStartup(message = 'Worker restarted') {
+    const jobs = await listActiveJobs();
+    for (const j of jobs) {
+        try {
+            await updateJob(j.job_id, {
+                status: 'failed',
+                error_message: message,
+                completed_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            });
+        } catch (_) { /* best-effort */ }
+    }
+    return jobs.length;
+}
+
 module.exports = {
     putVideo,
     getVideo,
@@ -120,7 +148,9 @@ module.exports = {
     getJob,
     updateJob,
     queryJobsByVideoId,
-    deleteJob
+    deleteJob,
+    listActiveJobs,
+    failInFlightJobsOnStartup
 };
 
 
