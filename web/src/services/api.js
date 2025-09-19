@@ -4,7 +4,7 @@ import axios from 'axios';
 // Can be overridden by REACT_APP_API_BASE when needed (e.g., different host/port).
 const { protocol, hostname } = window.location;
 const inferredApiBase = `${protocol}//${hostname}:3000`;
-const apiBaseUrl = inferredApiBase;
+const apiBaseUrl = process.env.REACT_APP_API_BASE || inferredApiBase;
 
 export const api = axios.create({
     baseURL: apiBaseUrl,

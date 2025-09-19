@@ -6,7 +6,7 @@ const { getCurrentCPUUsage, getCPUUsageHistory, getSystemInfo, getMemoryUsage } 
 const { authenticateToken } = require('../middleware/auth');
 const assemblyAI = require('../services/external/assemblyAIService');
 const { listPrefix, presignDownload, buildProcessedKey, buildMetaKey, deletePrefix, headObject, getObjectJson, deleteObject } = require('../services/storage/s3Service');
-const { putVideo, getJob, queryJobsByVideoId, updateJob } = require('../services/db/dynamoService');
+const { putVideo, getJob, queryJobsByVideoId, updateJob, listVideos } = require('../services/db/dynamoService');
 const { listActiveJobs } = require('../services/db/dynamoService');
 
 const router = express.Router();
@@ -347,50 +347,52 @@ router.post('/test-cpu', authenticateToken, async (req, res) => {
 
 module.exports = router;
 
-// List transcoded videos library (from S3 prefixes)
+// List transcoded videos library (from DynamoDB videos + presigned S3 URLs)
 router.get('/library', authenticateToken, async (req, res) => {
     try {
         const pageParam = req.query.page;
         const limitParam = req.query.limit;
         const page = Math.max(1, parseInt(pageParam || '1', 10) || 1);
         const limit = Math.max(1, Math.min(100, parseInt(limitParam || '10', 10) || 10));
-        // List distinct videoId prefixes under processed/
-        const first = await listPrefix('processed/');
-        const prefixes = new Set();
-        for (const obj of (first.Contents || [])) {
-            const parts = obj.Key.split('/');
-            if (parts.length >= 3) prefixes.add(parts[1]);
-        }
-        const videoIds = Array.from(prefixes);
-
-        const items = [];
-        for (const videoId of videoIds) {
-            const listed = await listPrefix(`processed/${videoId}/`);
-            const files = (listed.Contents || []).filter(o => o.Key.endsWith('.mp4'));
-            const resolutions = files.map(o => path.basename(o.Key).replace('.mp4', ''));
-            const urls = [];
-            for (const f of files) {
-                const reso = path.basename(f.Key).replace('.mp4', '');
-                let url = null;
-                try { url = await presignDownload(f.Key); } catch (_) { }
-                urls.push({ resolution: reso, url });
-            }
-            items.push({ videoId, resolutions, urls, updatedAt: files[0]?.LastModified || new Date(0) });
-        }
-
-        // Sort by updated time desc
-        items.sort((a, b) => b.updatedAt - a.updatedAt);
-
-        const totalVideos = items.length;
+        // Load videos from DynamoDB
+        const videos = await listVideos();
+        const totalVideos = videos.length;
         const totalPages = Math.max(1, Math.ceil(totalVideos / limit));
         const currentPage = Math.min(page, totalPages);
         const start = (currentPage - 1) * limit;
         const end = start + limit;
-        const pagedItems = items.slice(start, end);
+        const pageItems = videos.slice(start, end);
+
+        // For each paginated video, generate presigned URLs for available/expected resolutions
+        const items = [];
+        for (const v of pageItems) {
+            const videoId = v.video_id || String(v.sk || '').replace(/^VIDEO#/, '') || '';
+            const expected = Array.isArray(v.resolutions) && v.resolutions.length
+                ? v.resolutions
+                : ['1920x1080', '1280x720', '854x480'];
+            const urls = [];
+            for (const r of expected) {
+                const key = buildProcessedKey(videoId, r);
+                // Only include resolutions that actually exist in S3
+                const exists = await headObject(key).catch(() => null);
+                if (!exists) continue;
+                let url = null;
+                try { url = await presignDownload(key); } catch (_) { url = null; }
+                if (url) urls.push({ resolution: r, url });
+            }
+            items.push({
+                videoId,
+                resolutions: expected,
+                urls,
+                updatedAt: v.updated_at || v.created_at || new Date(0).toISOString(),
+                title: v.title,
+                description: v.description
+            });
+        }
 
         res.json({
             count: totalVideos,
-            videos: pagedItems,
+            videos: items,
             pagination: {
                 currentPage,
                 totalPages,

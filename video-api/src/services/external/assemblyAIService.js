@@ -5,13 +5,41 @@ const fsSync = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { uploadFileStream, uploadBuffer, buildMetaKey, presignDownload } = require('../storage/s3Service');
+const {SecretsManagerClient, GetSecretValueCommand} = require('@aws-sdk/client-secrets-manager');
+const AAI_API_BASE = process.env.AAI_API_BASE;
+var AAI_API_KEY = process.env.AAI_API_KEY;
+const secret_name = "cab432-a2-n12122882/ASSEMBLYAI_API_KEY";
 
-const AAI_API_BASE = 'https://api.assemblyai.com/v2';
-const AAI_API_KEY = '4b4ee61ef550452fa163d3a484d1d6a2';
-
-function assertApiKey() {
+const client = new SecretsManagerClient({
+  region: "ap-southeast-2",
+});
+async function assertApiKey() {
     if (!AAI_API_KEY) {
-        console.warn('ASSEMBLYAI_API_KEY is not set');
+        let response;
+
+        try {
+          response = await client.send(
+            new GetSecretValueCommand({
+              SecretId: secret_name,
+              VersionStage: "AWSCURRENT", // VersionStage defaults to AWSCURRENT if unspecified
+            })
+          );
+        } catch (error) {
+          // For a list of exceptions thrown, see
+          // https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+          throw error;
+        }
+        
+        const secretString = response.SecretString || '';
+        try {
+            const parsed = JSON.parse(secretString);
+            AAI_API_KEY = parsed?.AAI_API_KEY || parsed?.apiKey || parsed?.key || secretString;
+        } catch (_) {
+            // SecretString có thể đã là chuỗi token thô
+            AAI_API_KEY = secretString;
+        }
+        // Cache vào env để các chỗ khác dùng lại
+        process.env.AAI_API_KEY = AAI_API_KEY;
     }
 }
 
@@ -84,7 +112,7 @@ async function extractBestAudio(inputVideoPath, folder) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function uploadToAssemblyAI(filePath) {
-    // assertApiKey();
+    await assertApiKey();
     const size = fsSync.statSync(filePath).size;
     const maxAttempts = 3;
     let lastErr;
@@ -121,7 +149,7 @@ async function uploadToAssemblyAI(filePath) {
 }
 
 async function requestTranscription(audioUrl) {
-    // assertApiKey();
+    await assertApiKey();
     const payload = {
         audio_url: audioUrl,
         // Auto chapters cannot be enabled together with summarization; keep summarization by default
@@ -153,7 +181,7 @@ async function requestTranscription(audioUrl) {
 }
 
 async function fetchTranscript(transcriptId) {
-    // assertApiKey();
+    await assertApiKey();
     const res = await fetch(`${AAI_API_BASE}/transcript/${transcriptId}`, {
         method: 'GET',
         headers: { Authorization: AAI_API_KEY },

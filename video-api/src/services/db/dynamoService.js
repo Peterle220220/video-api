@@ -30,6 +30,29 @@ async function getVideo(videoId) {
     return res.Item || null;
 }
 
+// List all videos for current QUT user (SK begins with VIDEO#), sorted by updated_at desc
+async function listVideos() {
+    const items = [];
+    let lastKey = undefined;
+    do {
+        const res = await docClient.send(new QueryCommand({
+            TableName: DDB_TABLE,
+            KeyConditionExpression: '#pk = :u AND begins_with(#sk, :videoPrefix)',
+            ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk' },
+            ExpressionAttributeValues: { ':u': QUT_USERNAME, ':videoPrefix': 'VIDEO#' },
+            ExclusiveStartKey: lastKey
+        }));
+        if (res.Items && res.Items.length) items.push(...res.Items);
+        lastKey = res.LastEvaluatedKey;
+    } while (lastKey);
+    items.sort((a, b) => {
+        const au = a.updated_at || a.created_at || 0;
+        const bu = b.updated_at || b.created_at || 0;
+        return new Date(bu) - new Date(au);
+    });
+    return items;
+}
+
 async function updateVideoDescription(videoId, description) {
     const res = await docClient.send(new UpdateCommand({
         TableName: DDB_TABLE,
@@ -143,6 +166,7 @@ async function failInFlightJobsOnStartup(message = 'Worker restarted') {
 module.exports = {
     putVideo,
     getVideo,
+    listVideos,
     updateVideoDescription,
     putJob,
     getJob,
