@@ -1,5 +1,6 @@
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { ddbClient, DDB_TABLE, QUT_USERNAME } = require('../../config/aws');
+const { withCache, cacheDel } = require('../cache/memcached');
 
 const docClient = DynamoDBDocumentClient.from(ddbClient, {
     marshallOptions: { removeUndefinedValues: true, convertEmptyValues: false },
@@ -74,20 +75,28 @@ async function putJob(item) {
         sk: makeJobKey(videoId, jobId)
     });
     await docClient.send(new PutCommand({ TableName: DDB_TABLE, Item: record }));
+    // Invalidate potentially affected caches
+    try {
+        await cacheDel(`job:${QUT_USERNAME}:${jobId}`);
+        await cacheDel(`jobs:active:${QUT_USERNAME}`);
+    } catch (_) {}
 }
 
 // Note: We don't know videoId from jobId alone; query by PK and filter by job_id
 async function getJob(jobId) {
-    // Query by PK and sort key prefix in KeyCondition; filter by job_id
-    const res = await docClient.send(new QueryCommand({
-        TableName: DDB_TABLE,
-        KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
-        ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk', '#jid': 'job_id' },
-        ExpressionAttributeValues: { ':u': QUT_USERNAME, ':jobPrefix': 'JOB#', ':jid': jobId },
-        FilterExpression: '#jid = :jid',
-        Limit: 1
-    }));
-    return (res.Items && res.Items[0]) || null;
+    const cacheKey = `job:${QUT_USERNAME}:${jobId}`;
+    return await withCache(cacheKey, 20, async () => {
+        // Query by PK and sort key prefix in KeyCondition; filter by job_id
+        const res = await docClient.send(new QueryCommand({
+            TableName: DDB_TABLE,
+            KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
+            ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk', '#jid': 'job_id' },
+            ExpressionAttributeValues: { ':u': QUT_USERNAME, ':jobPrefix': 'JOB#', ':jid': jobId },
+            FilterExpression: '#jid = :jid',
+            Limit: 1
+        }));
+        return (res.Items && res.Items[0]) || null;
+    });
 }
 
 async function updateJob(jobId, updates) {
@@ -113,6 +122,12 @@ async function updateJob(jobId, updates) {
         ExpressionAttributeValues: exprValues,
         ReturnValues: 'ALL_NEW'
     }));
+    // Invalidate caches
+    try {
+        await cacheDel(`job:${QUT_USERNAME}:${jobId}`);
+        // Active jobs list cache
+        await cacheDel(`jobs:active:${QUT_USERNAME}`);
+    } catch (_) {}
     return res.Attributes || null;
 }
 
@@ -137,14 +152,17 @@ async function deleteJob(jobId) {
 
 // List jobs currently in-flight (status = processing or pending)
 async function listActiveJobs() {
-    const res = await docClient.send(new QueryCommand({
-        TableName: DDB_TABLE,
-        KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
-        ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk', '#status': 'status' },
-        ExpressionAttributeValues: { ':u': QUT_USERNAME, ':jobPrefix': 'JOB#', ':processing': 'processing', ':pending': 'pending' },
-        FilterExpression: '#status IN (:processing, :pending)'
-    }));
-    return res.Items || [];
+    const cacheKey = `jobs:active:${QUT_USERNAME}`;
+    return await withCache(cacheKey, 15, async () => {
+        const res = await docClient.send(new QueryCommand({
+            TableName: DDB_TABLE,
+            KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
+            ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk', '#status': 'status' },
+            ExpressionAttributeValues: { ':u': QUT_USERNAME, ':jobPrefix': 'JOB#', ':processing': 'processing', ':pending': 'pending' },
+            FilterExpression: '#status IN (:processing, :pending)'
+        }));
+        return res.Items || [];
+    });
 }
 
 // On startup, mark any in-flight jobs as failed (crash-safe, stateless)

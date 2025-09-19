@@ -4,6 +4,9 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const AWS_REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'ap-southeast-2';
 const S3_BUCKET = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || 'cab432-a2-n12122882';
 
+// ElastiCache Memcached endpoint (host:port)
+const MEMCACHED_ENDPOINT = process.env.MEMCACHED_ENDPOINT || 'video-api-n12122882.km2jzi.0001.apse2.cache.amazonaws.com:11211';
+
 // QUT single-table support
 const QUT_USERNAME = process.env.QUT_USERNAME || 'n12122882@qut.edu.au';
 const DDB_TABLE = process.env.DDB_TABLE || process.env.DDB_TABLE_MAIN || 'cab432-a2-n12122882-metadata';
@@ -36,6 +39,7 @@ const ddbClient = new DynamoDBClient({ region: AWS_REGION });
 module.exports = {
     AWS_REGION,
     S3_BUCKET,
+    MEMCACHED_ENDPOINT,
     QUT_USERNAME,
     DDB_TABLE,
     DDB_TABLE_VIDEOS,

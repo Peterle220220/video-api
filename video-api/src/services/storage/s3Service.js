@@ -1,6 +1,7 @@
 const { GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, HeadObjectCommand, DeleteObjectsCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { s3Client, S3_BUCKET } = require('../../config/aws');
+const { withCache, cacheDel } = require('../cache/memcached');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -24,18 +25,30 @@ async function presignDownload(key, { expiresIn = 900 } = {}) {
 
 async function uploadBuffer(key, buffer, { contentType = 'application/octet-stream', metadata } = {}) {
     await s3Client.send(new PutObjectCommand({ Bucket: S3_BUCKET, Key: normalizeKey(key), Body: buffer, ContentType: contentType, Metadata: metadata }));
+    // Invalidate HEAD/JSON caches for this key
+    try {
+        await cacheDel(`s3:head:${normalizeKey(key)}`);
+        await cacheDel(`s3:json:${normalizeKey(key)}`);
+    } catch (_) {}
     return { bucket: S3_BUCKET, key: normalizeKey(key) };
 }
 
 async function uploadFileStream(key, stream, { contentType = 'application/octet-stream', metadata } = {}) {
     await s3Client.send(new PutObjectCommand({ Bucket: S3_BUCKET, Key: normalizeKey(key), Body: stream, ContentType: contentType, Metadata: metadata }));
+    try {
+        await cacheDel(`s3:head:${normalizeKey(key)}`);
+        await cacheDel(`s3:json:${normalizeKey(key)}`);
+    } catch (_) {}
     return { bucket: S3_BUCKET, key: normalizeKey(key) };
 }
 
 async function headObject(key) {
     try {
-        const res = await s3Client.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: normalizeKey(key) }));
-        return res;
+        const cacheKey = `s3:head:${normalizeKey(key)}`;
+        return await withCache(cacheKey, 20, async () => {
+            const res = await s3Client.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: normalizeKey(key) }));
+            return res;
+        });
     } catch (err) {
         if (err && err.name === 'NotFound') return null;
         throw err;
@@ -44,6 +57,10 @@ async function headObject(key) {
 
 async function deleteObject(key) {
     await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: normalizeKey(key) }));
+    try {
+        await cacheDel(`s3:head:${normalizeKey(key)}`);
+        await cacheDel(`s3:json:${normalizeKey(key)}`);
+    } catch (_) {}
 }
 
 async function listPrefix(prefix, { continuationToken, maxKeys = 1000 } = {}) {
@@ -89,8 +106,11 @@ async function getObjectText(key) {
 }
 
 async function getObjectJson(key) {
-    const text = await getObjectText(key);
-    try { return JSON.parse(text); } catch (_) { return null; }
+    const cacheKey = `s3:json:${normalizeKey(key)}`;
+    return await withCache(cacheKey, 300, async () => {
+        const text = await getObjectText(key);
+        try { return JSON.parse(text); } catch (_) { return null; }
+    });
 }
 
 async function deletePrefix(prefix) {
