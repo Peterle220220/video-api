@@ -4,10 +4,10 @@ const helmet = require('helmet');
 const path = require('path');
 require('dotenv').config();
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+const { loadSecretsToEnv } = require('./config/secrets');
 
 const { startCPUMonitoring } = require('./utils/cpuMonitor');
 const multer = require('multer');
-const { failInFlightJobsOnStartup } = require('./services/db/dynamoService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +35,12 @@ app.get('/health', (req, res) => {
 // Initialize and start server
 async function startServer() {
     try {
+        // Load AWS Secrets Manager secrets into process.env before loading deps that read env
+        const secretsResult = await loadSecretsToEnv();
+        if (secretsResult && secretsResult.loaded) {
+            console.log(`🔐 Loaded ${secretsResult.loaded} secret(s) from AWS Secrets Manager`);
+        }
+
         // Load parameter for AAI base (string)
         process.env.AAI_API_BASE = await loadRuntimeParameters({ paramsNames: '/n12122882/video_api/aai_base' });
 
@@ -108,6 +114,7 @@ async function startServer() {
 
         // Crash-safety: mark in-flight jobs as failed on startup (stateless readiness)
         try {
+            const { failInFlightJobsOnStartup } = require('./services/db/dynamoService');
             const count = await failInFlightJobsOnStartup('Service restarted');
             if (count > 0) console.log(`🧹 Marked ${count} in-flight job(s) as failed on startup`);
         } catch (e) {
