@@ -510,9 +510,9 @@ export default function Videos() {
 							</div>
 						</div>
 						{library.map(item => (
-							<div key={item.videoId} style={{ display: 'grid', gap: 6 }}>
-								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-									<strong>{item.title}</strong>
+						<div key={item.videoId} style={{ display: 'grid', gap: 6 }}>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+								<strong title={item.title} style={{ minWidth: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflowWrap: 'anywhere' }}>{item.title}</strong>
 									{item.urls.map(u => (
 										<button key={u.url} onClick={() => onPreviewClick(item.videoId, u.url)}>
 											Preview {u.resolution}
@@ -542,7 +542,7 @@ export default function Videos() {
 								</button>
 							)}
 								</div>
-								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
 									<input
 										placeholder="Description"
 										value={(descDraftByVideoId[item.videoId] ?? aaiMetaByVideoId[item.videoId]?.description ?? '')}
