@@ -18,6 +18,7 @@ export default function Videos() {
 	const [transcodeStatus, setTranscodeStatus] = useState('idle');
 	const currentVideoIdRef = useRef('');
 	const currentJobIdRef = useRef('');
+	const userRef = useRef(null);
 	const pollingRef = useRef(null);
 	const defaultResolutions = ['1920x1080', '1280x720', '854x480'];
 	const [expectedResolutions, setExpectedResolutions] = useState(defaultResolutions);
@@ -31,6 +32,7 @@ export default function Videos() {
 	const [descSaving, setDescSaving] = useState({}); // {videoId: boolean}
 	const aaiPollingRef = useRef(null);
 	const aaiPollingVideoIdRef = useRef('');
+	const [isAdmin, setIsAdmin] = useState(false);
 
 	const formatBytes = (bytes) => {
 		if (!bytes && bytes !== 0) return '-';
@@ -81,6 +83,23 @@ export default function Videos() {
 		// Probe auth quickly and load library
 		api.get(endpoints.auth.test).catch(() => {});
 		loadLibrary(1, libraryLimit);
+		userRef.current = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
+		// Load profile to get groups and compute Admin role
+		(async () => {
+			try {
+				const { data } = await api.get(endpoints.auth.profile);
+				const u = data?.user || {};
+				const groups = Array.isArray(u.groups) ? u.groups : [];
+				const isAdm = groups.some(g => String(g).toLowerCase() === 'admin');
+				setIsAdmin(isAdm);
+				const existing = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
+				const merged = { ...existing, username: existing.username || u.username, groups, isAdmin: isAdm };
+				localStorage.setItem('user', JSON.stringify(merged));
+				userRef.current = merged;
+			} catch (_) {
+				// ignore; user might be unauthenticated or endpoint unavailable
+			}
+		})();
 	}, []);
 
 	const [library, setLibrary] = useState([]);
@@ -88,7 +107,6 @@ export default function Videos() {
 	const [libraryLimit, setLibraryLimit] = useState(10);
 	const [libraryPagination, setLibraryPagination] = useState({ currentPage: 1, totalPages: 1, totalVideos: 0, hasNext: false, hasPrev: false });
 	const [selectedPreview, setSelectedPreview] = useState({ videoId: '', url: '' });
-	const user = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
 
 	const loadLibrary = async (page = libraryPage, limit = libraryLimit) => {
 		try {
@@ -164,6 +182,7 @@ export default function Videos() {
 			if (err?.response?.status === 401 || err?.response?.status === 403) {
 				localStorage.removeItem('token');
 				localStorage.removeItem('user');
+				userRef.current = null;
 				navigate('/login');
 			}
 			setError(err?.response?.data?.error || 'Failed to load transcoded list');
@@ -176,6 +195,10 @@ export default function Videos() {
 		localStorage.removeItem('token');
 		localStorage.removeItem('user');
 		navigate('/login');
+	};
+
+	const goToAccount = () => {
+		navigate('/account');
 	};
 
 	const updateResolutionStatuses = (transcodedList = []) => {
@@ -372,12 +395,12 @@ export default function Videos() {
 	const onPreviewClick = async (videoId, url) => {
 		setSelectedPreview({ videoId, url });
 		await ensureMetaForUrl(url);
-		// fetch AssemblyAI meta and start polling if needed
+		// fetch AssemblyAI meta (supports either inline meta or presigned metaUrl) and start polling if needed
 		try {
-			const res = await api.get(endpoints.transcoding.meta(videoId));
-			const m = res?.data?.meta || null;
+			const m = await fetchMetaForVideo(videoId);
 			if (m) setAaiMetaByVideoId((prev) => ({ ...prev, [videoId]: m }));
-			if (!m || (m.status && String(m.status).toLowerCase() !== 'completed' && String(m.status).toLowerCase() !== 'error')) {
+			const st = String(m?.status || '').toLowerCase();
+			if (!m || (st !== 'completed' && st !== 'error')) {
 				startPollingMeta(videoId);
 			}
 		} catch (_) {
@@ -394,11 +417,10 @@ export default function Videos() {
 		aaiPollingVideoIdRef.current = videoId;
 		aaiPollingRef.current = setInterval(async () => {
 			try {
-				const res = await api.get(endpoints.transcoding.meta(aaiPollingVideoIdRef.current));
-				const m = res?.data?.meta || null;
+				const m = await fetchMetaForVideo(aaiPollingVideoIdRef.current);
 				if (m) setAaiMetaByVideoId((prev) => ({ ...prev, [aaiPollingVideoIdRef.current]: m }));
 				const status = String(m?.status || '').toLowerCase();
-				if (status === 'completed' || status === 'error') {
+				if (status === 'completed' || status === 'error' || (m && (m.summary || m.text))) {
 					clearInterval(aaiPollingRef.current);
 					aaiPollingRef.current = null;
 				}
@@ -408,11 +430,37 @@ export default function Videos() {
 		}, 3000);
 	};
 
+	// Helper: fetch meta either inline from backend or via presigned metaUrl
+	const fetchMetaForVideo = async (videoId) => {
+		try {
+			const res = await api.get(endpoints.transcoding.meta(videoId));
+			const inlineMeta = res?.data?.meta;
+			if (inlineMeta) return inlineMeta;
+			const metaUrl = res?.data?.metaUrl || res?.data?.url;
+			if (metaUrl) {
+				const r = await fetch(metaUrl);
+				if (!r.ok) throw new Error('Failed to fetch meta from presigned URL');
+				return await r.json();
+			}
+			return null;
+		} catch (_) {
+			return null;
+		}
+	};
+
 	return (
 		<div className="page-container">
 			<div className="page-header">
 				<h2>Videos</h2>
-				<button onClick={onLogout}>Logout</button>
+				<div className="user-menu">
+					<button className="user-trigger">
+						{userRef.current?.username || 'User'} ▼
+					</button>
+					<div className="user-dropdown">
+						<button onClick={goToAccount}>Account Settings</button>
+						<button onClick={onLogout} className="danger">Log Out</button>
+					</div>
+				</div>
 			</div>
 			<div style={{ display: 'flex', gap: 8, margin: '8px 0 16px' }}>
 				<input
@@ -464,31 +512,35 @@ export default function Videos() {
 						{library.map(item => (
 							<div key={item.videoId} style={{ display: 'grid', gap: 6 }}>
 								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-									<strong>{item.videoId}</strong>
+									<strong>{item.title}</strong>
 									{item.urls.map(u => (
 										<button key={u.url} onClick={() => onPreviewClick(item.videoId, u.url)}>
 											Preview {u.resolution}
 										</button>
 									))}
-									{user?.username === 'admin' && (
-										<button
-											style={{ marginLeft: 'auto', background: '#ef4444', color: 'white' }}
-											onClick={async () => {
-												if (!window.confirm('Delete this video and all transcoded files?')) return;
-												try {
-													await api.delete(endpoints.transcoding.deleteVideo(item.videoId));
-													await loadLibrary();
-													if (currentVideoIdRef.current === item.videoId) {
-														setVideos([]);
-													}
-												} catch (err) {
-													alert(err?.response?.data?.error || 'Failed to delete video');
-												}
-											}}
-										>
-											Delete
-										</button>
-									)}
+							{isAdmin && item.urls.length !== 0 && (
+								<button
+									style={{ marginLeft: 'auto', background: '#ef4444', color: 'white' }}
+									onClick={async () => {
+										if (!window.confirm('Delete this video and all transcoded files?')) return;
+										try {
+											await api.delete(endpoints.transcoding.deleteVideo(item.videoId));
+											if (currentVideoIdRef.current === item.videoId) {
+												setVideos([]);
+												setSelectedPreview({ videoId: '', url: '' });
+												setAaiMetaByVideoId((prev) => { const next = { ...prev }; delete next[item.videoId]; return next; });
+												setDescDraftByVideoId((prev) => { const next = { ...prev }; delete next[item.videoId]; return next; });
+											}
+										} catch (err) {
+											alert(err?.response?.data?.error || 'Failed to delete video');
+										} finally {
+											await loadLibrary();
+										}
+									}}
+								>
+									Delete
+								</button>
+							)}
 								</div>
 								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
 									<input

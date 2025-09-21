@@ -18,6 +18,16 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
+api.interceptors.response.use((response) => {
+    return response;
+}, (error) => {
+    if (error.response.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+    }
+    return Promise.reject(error);
+});
+
 export const endpoints = {
     auth: {
         login: '/api/auth/login',
@@ -25,6 +35,10 @@ export const endpoints = {
         confirm: '/api/auth/confirm',
         profile: '/api/auth/profile',
         test: '/api/auth/test',
+        challenge: '/api/auth/challenge',
+        totpAssociate: '/api/auth/mfa/totp/associate',
+        totpVerify: '/api/auth/mfa/totp/verify',
+        mfaDisable: '/api/auth/mfa/disable',
     },
     storage: {
         presignUpload: '/api/storage/presign-upload',

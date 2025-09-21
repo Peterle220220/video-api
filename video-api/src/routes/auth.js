@@ -1,5 +1,5 @@
 const express = require('express');
-const { signUp, confirmSignUp, login: cognitoLogin, verifyJwt } = require('../services/external/cognitoService');
+const { signUp, confirmSignUp, login: cognitoLogin, respondToAuthChallenge, associateSoftwareTokenWithAccessToken, verifySoftwareTokenAndEnableMFA, disableMFA, verifyJwt } = require('../services/external/cognitoService');
 
 const router = express.Router();
 
@@ -30,19 +30,87 @@ router.post('/login', async (req, res) => {
         if (!username || !password) {
             return res.status(400).json({ error: 'Username and password are required' });
         }
-        const tokens = await cognitoLogin({ username, password });
-        if (!tokens || !tokens.idToken) {
+        const result = await cognitoLogin({ username, password });
+        if (result?.requiresMfa) {
+            return res.status(200).json({
+                success: true,
+                mfaRequired: true,
+                challengeName: result.challengeName,
+                session: result.session,
+                challengeParameters: result.challengeParameters || {},
+                message: 'MFA required. Use /api/auth/challenge to respond.'
+            });
+        }
+        if (!result || !result.idToken) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
         return res.json({
             success: true,
             message: 'Login successful',
             user: { username },
-            tokens
+            tokens: result
         });
     } catch (error) {
         console.error('Login error:', error);
         return res.status(401).json({ error: error?.message || 'Login failed' });
+    }
+});
+
+// Respond to MFA challenge
+router.post('/challenge', async (req, res) => {
+    try {
+        const { username, session, challengeName, code } = req.body || {};
+        if (!username || !session || !challengeName || !code) {
+            return res.status(400).json({ error: 'username, session, challengeName, code are required' });
+        }
+        const result = await respondToAuthChallenge({ challengeName, session, username, mfaCode: code });
+        if (result?.requiresMfa) {
+            return res.status(400).json({ error: 'Additional challenge required', details: result });
+        }
+        if (!result?.idToken) return res.status(401).json({ error: 'Challenge failed' });
+        return res.json({ success: true, message: 'MFA verified', tokens: result });
+    } catch (error) {
+        console.error('Challenge error:', error);
+        return res.status(400).json({ error: error?.message || 'Challenge failed' });
+    }
+});
+
+// Start TOTP enrollment (require signed-in accessToken)
+router.post('/mfa/totp/associate', async (req, res) => {
+    try {
+        const { accessToken, username } = req.body || {};
+        if (!accessToken) return res.status(401).json({ error: 'accessToken required' });
+        const result = await associateSoftwareTokenWithAccessToken({ accessToken, username });
+        return res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Associate TOTP error:', error);
+        return res.status(400).json({ error: error?.message || 'Associate TOTP failed' });
+    }
+});
+
+// Verify TOTP and enable MFA
+router.post('/mfa/totp/verify', async (req, res) => {
+    try {
+        const { accessToken, code } = req.body || {};
+        if (!accessToken || !code) return res.status(400).json({ error: 'accessToken and code are required' });
+        const result = await verifySoftwareTokenAndEnableMFA({ accessToken, code });
+        return res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Verify TOTP error:', error);
+        return res.status(400).json({ error: error?.message || 'Verify TOTP failed' });
+    }
+});
+
+// Disable MFA
+router.post('/mfa/disable', async (req, res) => {
+    try {
+        const { accessToken } = req.body || {};
+        if (!accessToken) return res.status(400).json({ error: 'accessToken is required' });
+        const result = await disableMFA({ accessToken });
+        return res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Disable MFA error:', error);
+        return res.status(400).json({ error: error?.message || 'Disable MFA failed' });
     }
 });
 

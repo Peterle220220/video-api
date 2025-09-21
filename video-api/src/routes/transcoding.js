@@ -412,8 +412,9 @@ router.get('/library', authenticateToken, async (req, res) => {
 router.delete('/videos/:videoId', authenticateToken, async (req, res) => {
     try {
         const { videoId } = req.params;
-        if (!req.user || req.user.username !== 'admin') {
-            return res.status(403).json({ error: 'Only admin can delete videos' });
+        const isAdmin = !!(req.user && (req.user.isAdmin || (Array.isArray(req.user.groups) && req.user.groups.some(g => String(g).toLowerCase() === 'admin'))));
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Only Admin group members can delete videos' });
         }
         // Delete all processed objects under this videoId
         try { await deletePrefix(`processed/${videoId}/`); } catch (err) { console.warn('Failed to delete processed prefix:', err?.message || err); }

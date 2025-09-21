@@ -6,6 +6,7 @@ import Videos from './pages/Videos';
 import ProtectedRoute from './routes/ProtectedRoute';
 import './styles/app.css';
 import Register from './pages/Register';
+import Account from './pages/Account';
 
 function App() {
   return (
@@ -15,6 +16,14 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route
+          path="/account"
+          element={
+            <ProtectedRoute>
+              <Account />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/videos"
           element={

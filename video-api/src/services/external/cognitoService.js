@@ -1,4 +1,4 @@
-const { CognitoIdentityProviderClient, SignUpCommand, ConfirmSignUpCommand, InitiateAuthCommand } = require('@aws-sdk/client-cognito-identity-provider');
+const { CognitoIdentityProviderClient, SignUpCommand, ConfirmSignUpCommand, InitiateAuthCommand, RespondToAuthChallengeCommand, AssociateSoftwareTokenCommand, VerifySoftwareTokenCommand, SetUserMFAPreferenceCommand } = require('@aws-sdk/client-cognito-identity-provider');
 const { AWS_REGION, COGNITO_CLIENT_ID, COGNITO_JWKS_URI, COGNITO_CLIENT_SECRET } = require('../../config/aws');
 const crypto = require('crypto');
 const { createRemoteJWKSet, jwtVerify } = require('jose');
@@ -40,6 +40,9 @@ async function confirmSignUp({ username, code }) {
     return await client.send(cmd);
 }
 
+/**
+ * Initiate authentication. If MFA is required, returns challenge info instead of tokens.
+ */
 async function login({ username, password }) {
     if (!COGNITO_CLIENT_ID) throw new Error('COGNITO_CLIENT_ID not configured');
     const authParams = {
@@ -54,12 +57,107 @@ async function login({ username, password }) {
         AuthParameters: authParams
     });
     const res = await client.send(cmd);
+    if (res?.ChallengeName) {
+        return {
+            challengeName: res.ChallengeName,
+            session: res.Session,
+            challengeParameters: res.ChallengeParameters || {},
+            requiresMfa: true
+        };
+    }
     return {
         idToken: res?.AuthenticationResult?.IdToken,
         accessToken: res?.AuthenticationResult?.AccessToken,
         refreshToken: res?.AuthenticationResult?.RefreshToken,
-        expiresIn: res?.AuthenticationResult?.ExpiresIn
+        expiresIn: res?.AuthenticationResult?.ExpiresIn,
+        requiresMfa: false
     };
+}
+
+/**
+ * Respond to MFA or other Cognito challenges (e.g., SOFTWARE_TOKEN_MFA, SMS_MFA).
+ */
+async function respondToAuthChallenge({ challengeName, session, username, mfaCode }) {
+    if (!COGNITO_CLIENT_ID) throw new Error('COGNITO_CLIENT_ID not configured');
+    if (!challengeName || !session || !username) {
+        throw new Error('challengeName, session, username are required');
+    }
+    const challengeResponses = { USERNAME: username };
+    const secretHash = computeSecretHash(username);
+    if (secretHash) challengeResponses.SECRET_HASH = secretHash;
+    if (challengeName === 'SOFTWARE_TOKEN_MFA') {
+        challengeResponses.SOFTWARE_TOKEN_MFA_CODE = mfaCode;
+    } else if (challengeName === 'SMS_MFA') {
+        challengeResponses.SMS_MFA_CODE = mfaCode;
+    }
+    const cmd = new RespondToAuthChallengeCommand({
+        ChallengeName: challengeName,
+        ClientId: COGNITO_CLIENT_ID,
+        Session: session,
+        ChallengeResponses: challengeResponses
+    });
+    const res = await client.send(cmd);
+    if (res?.ChallengeName) {
+        return {
+            challengeName: res.ChallengeName,
+            session: res.Session,
+            challengeParameters: res.ChallengeParameters || {},
+            requiresMfa: true
+        };
+    }
+    return {
+        idToken: res?.AuthenticationResult?.IdToken,
+        accessToken: res?.AuthenticationResult?.AccessToken,
+        refreshToken: res?.AuthenticationResult?.RefreshToken,
+        expiresIn: res?.AuthenticationResult?.ExpiresIn,
+        requiresMfa: false
+    };
+}
+
+/**
+ * Begin TOTP association for a signed-in user using AccessToken.
+ * Returns SecretCode and otpauth URI for QR rendering on client.
+ */
+async function associateSoftwareTokenWithAccessToken({ accessToken, username, issuer = 'VideoAPI' }) {
+    if (!accessToken) throw new Error('accessToken is required');
+    const cmd = new AssociateSoftwareTokenCommand({ AccessToken: accessToken });
+    const res = await client.send(cmd);
+    const secretCode = res?.SecretCode;
+    if (!secretCode) throw new Error('Failed to get TOTP secret');
+    const label = encodeURIComponent(`${issuer}:${username || 'user'}`);
+    const otpauthUri = `otpauth://totp/${label}?secret=${secretCode}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
+    return { secretCode, otpauthUri };
+}
+
+/**
+ * Verify TOTP for a signed-in user and enable as preferred MFA.
+ */
+async function verifySoftwareTokenAndEnableMFA({ accessToken, code }) {
+    if (!accessToken || !code) throw new Error('accessToken and code are required');
+    const verifyCmd = new VerifySoftwareTokenCommand({ AccessToken: accessToken, UserCode: code });
+    const verifyRes = await client.send(verifyCmd);
+    if (verifyRes?.Status !== 'SUCCESS') {
+        throw new Error('Invalid TOTP code');
+    }
+    const setPrefCmd = new SetUserMFAPreferenceCommand({
+        AccessToken: accessToken,
+        SoftwareTokenMfaSettings: { Enabled: true, PreferredMfa: true }
+    });
+    await client.send(setPrefCmd);
+    return { enabled: true };
+}
+
+/**
+ * Disable MFA (software token) for a signed-in user.
+ */
+async function disableMFA({ accessToken }) {
+    if (!accessToken) throw new Error('accessToken is required');
+    const setPrefCmd = new SetUserMFAPreferenceCommand({
+        AccessToken: accessToken,
+        SoftwareTokenMfaSettings: { Enabled: false, PreferredMfa: false }
+    });
+    await client.send(setPrefCmd);
+    return { enabled: false };
 }
 
 async function verifyJwt(token) {
@@ -73,6 +171,10 @@ module.exports = {
     signUp,
     confirmSignUp,
     login,
+    respondToAuthChallenge,
+    associateSoftwareTokenWithAccessToken,
+    verifySoftwareTokenAndEnableMFA,
+    disableMFA,
     verifyJwt
 };
 

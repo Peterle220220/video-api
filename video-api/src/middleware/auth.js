@@ -12,11 +12,16 @@ const authenticateToken = async (req, res, next) => {
 
     try {
         const payload = await verifyJwt(token);
+        const rawGroups = payload['cognito:groups'];
+        const groups = Array.isArray(rawGroups)
+            ? rawGroups
+            : (typeof rawGroups === 'string' && rawGroups.length ? [rawGroups] : []);
         req.user = {
             id: payload.sub || 'cognito-user',
             username: payload['cognito:username'] || payload.username || payload.email || 'user',
             email: payload.email,
-            groups: payload['cognito:groups']
+            groups,
+            isAdmin: groups.some(g => String(g).toLowerCase() === 'admin')
         };
         return next();
     } catch (e) {
