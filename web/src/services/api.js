@@ -21,9 +21,19 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use((response) => {
     return response;
 }, (error) => {
-    if (error.response.status === 401) {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
+    const status = error && error.response && error.response.status;
+    if (status === 401) {
+        const requestUrl = (error && error.config && error.config.url) || '';
+        const isAuthRequest = requestUrl.startsWith('/api/auth');
+        const currentPath = window.location && window.location.pathname;
+        const isOnAuthPage = currentPath === '/login' || currentPath === '/register' || currentPath === '/forgot-password';
+
+        // Chỉ redirect khi 401 xảy ra trên các API protected, không phải auth endpoints
+        // và khi không đứng ở trang auth (để tránh refresh làm mất state lỗi trên Login)
+        if (!isAuthRequest && !isOnAuthPage) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+        }
     }
     return Promise.reject(error);
 });
