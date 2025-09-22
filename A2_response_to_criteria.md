@@ -10,10 +10,10 @@
 
 ## Overview
 
-- **Name:** YourName GoesHere
+- **Name:** Nam Phong Le
 - **Student number:** n12122882
 - **Application name:** Video Transcoding API
-- **Two line description:** RESTful API for video uploads using S3 pre-signed URLs and multi-resolution transcoding with FFmpeg; persistent state stored in S3 + DynamoDB; authentication via Amazon Cognito (supports TOTP MFA); runtime configuration via SSM Parameter Store; AssemblyAI key stored in Secrets Manager.
+- **Two line description:** RESTful API for video uploads using S3 pre-signed URLs and multi-resolution transcoding with FFmpeg, persistent state stored in S3 + DynamoDB, authentication via Amazon Cognito (supports TOTP MFA), runtime configuration via SSM Parameter Store, AssemblyAI key stored in Secrets Manager.
 - **EC2 instance name or ID:**
 
 ---
@@ -23,7 +23,7 @@
 - **AWS service name:** Amazon S3
 - **What data is being stored?:** Uploaded source video files, transcoded .mp4 variants by resolution, extracted audio files (mp3/m4a/wav), and JSON metadata at `meta/<videoId>.json`.
 - **Why is this service suited to this data?:** Durable object storage with cost-effective handling of large files, built-in pre-signed URLs for direct upload/download, and easy scalability.
-- **Why is are the other services used not suitable for this data?:** DynamoDB is not suitable for large blobs; the local filesystem would make the system stateful and non-durable when scaling or restarting.
+- **Why is are the other services used not suitable for this data?:** DynamoDB is not suitable for large blobs, the local filesystem would make the system stateful and non-durable when scaling or restarting.
 - **Bucket/instance/table name:** cab432-a2-n12122882
 - **Video timestamp:**
 - **Relevant files:**
@@ -34,9 +34,9 @@
 ### Core - Second data persistence service
 
 - **AWS service name:** Amazon DynamoDB
-- **What data is being stored?:** Video metadata (title, description, owner) and transcoding jobs (per-resolution progress, status, start/end timestamps).
-- **Why is this service suited to this data?:** Serverless NoSQL with low latency and pay-per-request pricing; the single-table design is convenient for user-scoped queries and job records.
-- **Why is are the other services used not suitable for this data?:** S3 does not support flexible querying; RDS requires heavier operations/management; the local filesystem is not durable.
+- **What data is being stored?:** Video metadata (title, description, transcripts) and transcoding jobs (per-resolution progress, status).
+- **Why is this service suited to this data?:** Serverless NoSQL with low latency and pay-per-request pricing, the single-table design is convenient for user-scoped queries and job records.
+- **Why is are the other services used not suitable for this data?:** S3 does not support flexible querying, RDS requires heavier operations/management, the local filesystem is not durable.
 - **Bucket/instance/table name:** cab432-a2-n12122882-metadata
 - **Video timestamp:**
 - **Relevant files:**
@@ -66,18 +66,39 @@
 
 ### Core - Statelessness
 
-- **What data is stored within your application that is not stored in cloud data services?:** Temporary files in `/tmp` during transcode/upload, in-memory queues and in-flight job state, and in-memory CPU usage history.
-- **Why is this data not considered persistent state?:** These are temporary/derivative data that can be recreated from S3 and DynamoDB metadata; they are discarded when the container stops.
-- **How does your application ensure data consistency if the app suddenly stops?:** On startup, the system marks any in-flight jobs as `failed` to avoid stuck states; transcoding can be re-initiated from S3 inputs and stored metadata.
+- **What data is stored within your application that is not stored in cloud data services?:**
+  - Temporary files in the OS temp directory (e.g. `os.tmpdir()`/`/tmp`) during download-from-S3 and per-resolution FFmpeg outputs before upload to S3.
+  - In-memory execution state for the transcoder: global task queue, concurrency counters, and active FFmpeg command handles used to cancel jobs.
+  - In-memory CPU metrics history kept only for live monitoring/telemetry on the metrics endpoints.
+  - No server-side sessions are stored: authentication is stateless via Cognito JWT verification on every request.
+
+- **Why is this data not considered persistent state?:**
+  - All above items are ephemeral/derivative and do not need to survive a restart. Final artifacts (videos, metadata) live in S3; job state and progress live in DynamoDB.
+  - Temp files are deleted once uploaded to S3; if the container stops, they are discarded with the container filesystem.
+  - The transcoding queue and active process handles are runtime-only control structures; they are reconstructed on boot.
+  - The UI and clients never rely on local files: uploads/downloads use S3 presigned URLs; the API does not serve static assets from disk (static serving removed).
+
+- **How does your application ensure data consistency if the app suddenly stops?:**
+  - On startup, any jobs left in `processing`/`pending` are marked `failed` via a reconciliation routine so the system never leaves jobs stuck in-flight. Clients can safely re-trigger transcoding from the original S3 input.
+  - Job progress and per-resolution status are written to DynamoDB continuously (throttled ~every 5%) while FFmpeg runs; after each resolution is uploaded to S3 it is marked `completed`. Therefore, partial progress is visible/durable even if the worker dies mid-run.
+  - Inputs and outputs are addressed by deterministic S3 keys (e.g., `processed/<videoId>/<resolution>.mp4`), so recomputation is straightforward and idempotent.
+  - Authentication is stateless: each request brings its own JWT which is verified against Cognito, so no session store or sticky routing is required.
+
+- **Operational behaviors that keep state out of instances:**
+  - Runtime configuration is fetched from SSM Parameter Store at boot (FFmpeg tunables, concurrency, monitoring intervals) instead of using local config files.
+  - The API exposes a health endpoint and does not write persistent data to local disk; uploads/downloads flow directly between clients and S3 using presigned URLs.
+
 - **Relevant files:**
-  - `video-api/src/services/db/dynamoService.js` (failInFlightJobsOnStartup)
-  - `video-api/src/services/transcodingService.js`
-  - `video-api/src/utils/cpuMonitor.js`
-  - `video-api/src/server.js`
+  - `video-api/src/services/db/dynamoService.js`: `failInFlightJobsOnStartup`, `updateJob`, `getJob`, `listActiveJobs`.
+  - `video-api/src/services/transcodingService.js`: in-memory `activeJobs`/`pendingTasks`/`runningTasks`, `enqueueTranscode`, `updateJobResolutionProgress`, `createJobRecord`.
+  - `video-api/src/services/storage/s3Service.js`: `downloadToTempFile` (temp files), `uploadFileStream`, `buildProcessedKey`, `buildMetaKey`.
+  - `video-api/src/utils/cpuMonitor.js`: in-memory `cpuUsageHistory` and interval-based sampler.
+  - `video-api/src/middleware/auth.js`: stateless JWT verification (no DB session lookup).
+  - `video-api/src/server.js`: loads runtime config from SSM and triggers startup reconciliation of in-flight jobs.
 
 ### Core - Authentication with Cognito
 
-- **User pool name:** video-api-a2-n12122882
+- **User pool name:** User pool - kwy8d6
 - **How are authentication tokens handled by the client?:** JWTs are stored in `localStorage` (key `token`) and automatically attached to the `Authorization: Bearer <token>` header for every request.
 - **Video timestamp:**
 - **Relevant files:**
@@ -90,7 +111,7 @@
 
 ### Cognito multi-factor authentication
 
-- **What factors are used for authentication:** Password + TOTP (Authenticator app). The code also supports SMS_MFA if enabled in the pool.
+- **What factors are used for authentication:** Password + TOTP (Authenticator app).
 - **Video timestamp:**
 - **Relevant files:**
   - `video-api/infra/terraform/cognito.tf`
@@ -99,7 +120,7 @@
 
 ### Cognito groups
 
-- **How are groups used to set permissions?:** The `Admin` group can delete transcoded videos; middleware reads `cognito:groups` from the JWT to check.
+- **How are groups used to set permissions?:** The `Admin` group can delete transcoded videos, middleware reads `cognito:groups` from the JWT to check.
 - **Video timestamp:**
 - **Relevant files:**
   - `video-api/infra/terraform/cognito.tf` (group Admin)
@@ -108,7 +129,7 @@
 
 ### Core - DNS with Route53
 
-- **Subdomain**:
+- **Subdomain**: `n12122882.cab432.com:3000`,  `n12122882.cab432.com:3001`
 - **Video timestamp:**
 
 ### Parameter store
