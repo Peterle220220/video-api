@@ -149,8 +149,42 @@
 
 ### Infrastructure as code
 
-- **Technology used:** Terraform
-- **Services deployed:** S3 bucket, DynamoDB table (single-table), Cognito User Pool + App Client + Group, SSM Parameter Store (configuration parameters).
+- **Technology used:** Terraform (>= 1.5), AWS provider `~> 5.0`, region `ap-southeast-2`.
+- **Purpose:** Express the application infrastructure as code for repeatability, version control, and safe teardown.
+
+- **What I provisioned (IaC):**
+  - **Amazon S3 – video storage**
+    - Bucket: `cab432-a2-n12122882`.
+    - Versioning enabled for data safety; full Public Access Block enabled.
+    - CORS allows `GET, PUT, POST, HEAD`, `allowed_origins: *`, `expose_headers: ETag`, `max_age_seconds: 3000`.
+    - Used for: source uploads, transcoded outputs, and JSON metadata.
+  - **Amazon DynamoDB – metadata and jobs**
+    - Table: `cab432-a2-n12122882-metadata`, single-table design.
+    - Keys: `qut-username` (PK) and `sk` (SK). Billing: `PAY_PER_REQUEST`.
+    - TTL disabled. `manage_ddb` variable allows skipping table creation when the table already exists.
+  - **Amazon Cognito – authentication**
+    - User Pool: `video-api-a2-n12122882`; App Client: `web-app-client` (with `client_secret`).
+    - MFA configuration `OPTIONAL` with software TOTP enabled.
+    - Enabled flows: `ALLOW_USER_PASSWORD_AUTH`, `ALLOW_REFRESH_TOKEN_AUTH`.
+    - Creates `Admin` group for RBAC; exposes `JWKS URI` via outputs for backend JWT verification.
+  - **SSM Parameter Store – runtime configuration**
+    - `/n12122882/video_api/aai_base` = `https://api.assemblyai.com`.
+    - `/n12122882/video_api/ffmpeg_config` (JSON):
+      - `ffmpeg`: `preset=medium`, `crf=23`, `fps=30`, `threads=0`
+      - `transcoding`: `defaultResolutions=["1280x720","854x480"]`, `maxConcurrent=2`
+      - `limits.maxFileSize="500MB"`, `monitoring.cpuMonitoringInterval=2000`
+
+- **How I apply IaC (workflow):**
+  - Initialize and apply: `terraform init`, `terraform validate`, `terraform plan -out tfplan`, `terraform apply -auto-approve tfplan`.
+  - If resources already exist: use `terraform import` (S3/DynamoDB) or set `manage_ddb=false` in `local.tfvars` to skip table management.
+  - After apply, export outputs for the app:
+    - Export JSON: `terraform output -json > outputs.json`
+    - On Windows: run `export-env.ps1` to generate `.env.iac` at the project root with `AWS_REGION`, `S3_BUCKET`, `DDB_TABLE`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_CLIENT_SECRET`, `COGNITO_JWKS_URI`.
+
+- **Why IaC here:**
+  - Fast spin-up/tear-down; consistent configuration across machines.
+  - Review/rollback changes via Git; reduces manual errors.
+
 - **Video timestamp:**
 - **Relevant files:**
   - `video-api/infra/terraform/providers.tf`
@@ -159,4 +193,6 @@
   - `video-api/infra/terraform/dynamodb.tf`
   - `video-api/infra/terraform/cognito.tf`
   - `video-api/infra/terraform/ssm.tf`
+  - `video-api/infra/terraform/outputs.tf`
   - `video-api/infra/terraform/README.md`
+  - `video-api/infra/terraform/export-env.ps1`
