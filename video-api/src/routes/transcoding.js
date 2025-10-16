@@ -2,6 +2,9 @@ const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const transcodingService = require('../services/transcodingService');
+const { send } = require('../../../shared/src/sqs/sender');
+const { buildTranscodeMessage } = require('../../../shared/src/types/messages');
+const { putVideo } = require('../services/db/dynamoService');
 const { getCurrentCPUUsage, getCPUUsageHistory, getSystemInfo, getMemoryUsage } = require('../utils/cpuMonitor');
 const { authenticateToken } = require('../middleware/auth');
 const assemblyAI = require('../services/external/assemblyAIService');
@@ -35,7 +38,7 @@ router.post('/start', authenticateToken, async (req, res) => {
             }
         }
 
-        // Create video record in DynamoDB
+        // Create/normalize video record in legacy table (best-effort)
         try {
             await putVideo({
                 video_id: videoId,
@@ -45,20 +48,21 @@ router.post('/start', authenticateToken, async (req, res) => {
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
                 source: { s3_key: inputSource.key },
-                resolutions: resolutionList
+                resolutions: resolutionList,
+                status: 'queued'
             });
-        } catch (e) {
-            console.warn('putVideo failed (continuing):', e?.message || e);
-        }
+        } catch (_) {}
 
-        // Start transcoding in background (it will handle S3/local inputs)
-        transcodingService.transcodeVideo(videoId, inputSource, resolutionList)
-            .then(result => {
-                console.log(`✅ Transcoding completed for video ${videoId}:`, result);
-            })
-            .catch(error => {
-                console.error(`❌ Transcoding failed for video ${videoId}:`, error);
-            });
+        // NEW: push message to SQS for transcoder-worker
+        try {
+            const queueUrl = process.env.SQS_TRANSCODE_URL;
+            if (!queueUrl) return res.status(500).json({ error: 'SQS_TRANSCODE_URL not set' });
+            const msg = buildTranscodeMessage({ videoId, ownerId: req.user?.id || 'unknown', inputKey: inputSource.key, variants: resolutionList, outputFormat: 'mp4' });
+            await send(queueUrl, msg);
+        } catch (err) {
+            console.error('Failed to enqueue transcode job:', err);
+            return res.status(500).json({ error: 'Failed to enqueue transcode job' });
+        }
 
         // Start background AssemblyAI processing for transcript/summary (best-effort)
         try {
@@ -80,11 +84,11 @@ router.post('/start', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Transcoding job started',
+            message: 'Transcoding job enqueued',
             videoId: videoId,
             filename: filename,
             resolutions: resolutionList,
-            status: 'processing',
+            status: 'queued',
             urls
         });
 

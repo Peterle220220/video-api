@@ -66,3 +66,20 @@ terraform destroy -auto-approve
 - S3 CORS allows all origins for simplicity (demo). Tighten in prod.
 - DynamoDB is on-demand billing; keys: qut-username (PK), sk (SK).
 - Cognito enables optional TOTP; Admin group created for RBAC.
+
+## Added resources (SQS, ECS scaffolding)
+
+- SQS queues: transcode (+DLQ), transcribe (+DLQ)
+- CloudWatch log groups for API and workers
+- ECS cluster and IAM roles (execution + task role with least privilege)
+- CloudWatch alarms for queue depth/oldest age (example)
+
+Outputs include `sqs_transcode_url`, `sqs_transcribe_url`, and DLQ URLs.
+
+### Wiring envs
+
+Use the outputs to fill env vars:
+- API: `SQS_TRANSCODE_URL`, `SQS_TRANSCRIBE_URL`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `S3_INPUT_BUCKET`, `S3_OUTPUT_BUCKET`, `AWS_REGION`, `DDB_TABLE`
+- transcoder-worker: `SQS_TRANSCODE_URL`, `SQS_TRANSCRIBE_URL`, `S3_INPUT_BUCKET`, `S3_OUTPUT_BUCKET`, `DYNAMO_TABLE_VIDEOS`, `AWS_REGION`
+- transcribe-worker: `SQS_TRANSCRIBE_URL`, `ASSEMBLYAI_API_KEY`, `DYNAMO_TABLE_VIDEOS`, `AWS_REGION`
+- dlq-handler: `SQS_TRANSCODE_DLQ_URL`, `SQS_TRANSCRIBE_DLQ_URL`, `DYNAMO_TABLE_VIDEOS`, `AWS_REGION`

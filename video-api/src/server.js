@@ -24,11 +24,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-    res.json({
-        status: 'OK',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime()
-    });
+    res.json({ ok: true, timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
 
 
