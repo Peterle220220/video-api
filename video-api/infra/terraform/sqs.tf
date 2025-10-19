@@ -38,24 +38,4 @@ resource "aws_sqs_queue" "transcribe" {
   redrive_policy             = jsonencode({ deadLetterTargetArn = aws_sqs_queue.transcribe_dlq.arn, maxReceiveCount = var.max_receive_count })
 }
 
-output "sqs_transcode_url" {
-  value       = aws_sqs_queue.transcode.url
-  description = "Transcode queue URL"
-}
-
-output "sqs_transcode_dlq_url" {
-  value       = aws_sqs_queue.transcode_dlq.url
-  description = "Transcode DLQ URL"
-}
-
-output "sqs_transcribe_url" {
-  value       = aws_sqs_queue.transcribe.url
-  description = "Transcribe queue URL"
-}
-
-output "sqs_transcribe_dlq_url" {
-  value       = aws_sqs_queue.transcribe_dlq.url
-  description = "Transcribe DLQ URL"
-}
-
-
+ 
