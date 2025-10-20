@@ -18,8 +18,9 @@ COPY video-api/package*.json ./
 # Install dependencies (use lockfile if present)
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 
-# Copy shared libs and source code
-COPY shared ./shared
+# Copy shared libs to absolute /shared so '../../../shared/...' resolves correctly
+COPY shared /shared
+# Copy API source code
 COPY video-api/src ./src
 
 # Create necessary directories
