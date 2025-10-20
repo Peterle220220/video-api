@@ -12,14 +12,15 @@ RUN apk add --no-cache \
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files from repo root path
+COPY video-api/package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies (use lockfile if present)
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 
-# Copy source code
-COPY src/ ./src/
+# Copy shared libs and source code
+COPY shared ./shared
+COPY video-api/src ./src
 
 # Create necessary directories
 RUN mkdir -p uploads processed
