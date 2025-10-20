@@ -9,7 +9,7 @@ const { getCurrentCPUUsage, getCPUUsageHistory, getSystemInfo, getMemoryUsage } 
 const { authenticateToken } = require('../middleware/auth');
 const assemblyAI = require('../services/external/assemblyAIService');
 const { listPrefix, presignDownload, buildProcessedKey, buildMetaKey, deletePrefix, headObject, getObjectJson, deleteObject } = require('../services/storage/s3Service');
-const { putVideo, getJob, queryJobsByVideoId, updateJob, listVideos } = require('../services/db/dynamoService');
+const { getJob, queryJobsByVideoId, updateJob, listVideos } = require('../services/db/dynamoService');
 const { listActiveJobs } = require('../services/db/dynamoService');
 
 const router = express.Router();
