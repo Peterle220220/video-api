@@ -4,6 +4,20 @@ const helmet = require('helmet');
 const path = require('path');
 require('dotenv').config();
 const { SSMClient, GetParameterCommand } = require('@aws-sdk/client-ssm');
+const Module = require('module');
+
+// Ensure shared modules can resolve dependencies from app's node_modules
+(function ensureAppNodeModulesInPath() {
+    try {
+        const appNodeModules = path.resolve(__dirname, '..', 'node_modules');
+        if (appNodeModules) {
+            process.env.NODE_PATH = process.env.NODE_PATH
+                ? `${appNodeModules}${path.delimiter}${process.env.NODE_PATH}`
+                : appNodeModules;
+            Module._initPaths();
+        }
+    } catch (_) { /* no-op */ }
+})();
 
 const { startCPUMonitoring } = require('./utils/cpuMonitor');
 const multer = require('multer');
@@ -31,33 +45,40 @@ app.get('/health', (req, res) => {
 // Initialize and start server
 async function startServer() {
     try {
-        // Load parameter for AAI base (string)
-        process.env.AAI_API_BASE = await loadRuntimeParameters({ paramsNames: '/n12122882/video_api/aai_base' });
+        const SKIP_SSM = String(process.env.SKIP_SSM || '').toLowerCase() === '1' || String(process.env.SKIP_SSM || '').toLowerCase() === 'true';
+        if (!SKIP_SSM) {
+            // Load parameter for AAI base (string)
+            process.env.AAI_API_BASE = await loadRuntimeParameters({ paramsNames: '/n12122882/video_api/aai_base' });
 
-        // Load consolidated FFmpeg/config JSON and map to env
-        const ffmpegConfig = await loadRuntimeParametersJson({ paramName: '/n12122882/video_api/ffmpeg_config' });
+            // Load consolidated FFmpeg/config JSON and map to env
+            const ffmpegConfig = await loadRuntimeParametersJson({ paramName: '/n12122882/video_api/ffmpeg_config' });
 
-        if (ffmpegConfig && ffmpegConfig.ffmpeg) {
-            if (ffmpegConfig.ffmpeg.preset) process.env.FFMPEG_PRESET = String(ffmpegConfig.ffmpeg.preset);
-            if (ffmpegConfig.ffmpeg.crf != null) process.env.FFMPEG_CRF = String(ffmpegConfig.ffmpeg.crf);
-            if (ffmpegConfig.ffmpeg.fps != null) process.env.FFMPEG_FPS = String(ffmpegConfig.ffmpeg.fps);
-            if (ffmpegConfig.ffmpeg.threads != null) process.env.FFMPEG_THREADS = String(ffmpegConfig.ffmpeg.threads);
-        }
-        if (ffmpegConfig && ffmpegConfig.transcoding) {
-            if (Array.isArray(ffmpegConfig.transcoding.defaultResolutions)) {
-                process.env.DEFAULT_RESOLUTIONS = JSON.stringify(ffmpegConfig.transcoding.defaultResolutions);
+            if (ffmpegConfig && ffmpegConfig.ffmpeg) {
+                if (ffmpegConfig.ffmpeg.preset) process.env.FFMPEG_PRESET = String(ffmpegConfig.ffmpeg.preset);
+                if (ffmpegConfig.ffmpeg.crf != null) process.env.FFMPEG_CRF = String(ffmpegConfig.ffmpeg.crf);
+                if (ffmpegConfig.ffmpeg.fps != null) process.env.FFMPEG_FPS = String(ffmpegConfig.ffmpeg.fps);
+                if (ffmpegConfig.ffmpeg.threads != null) process.env.FFMPEG_THREADS = String(ffmpegConfig.ffmpeg.threads);
             }
-            if (ffmpegConfig.transcoding.maxConcurrent != null) {
-                process.env.MAX_CONCURRENT_TRANSCODES = String(ffmpegConfig.transcoding.maxConcurrent);
+            if (ffmpegConfig && ffmpegConfig.transcoding) {
+                if (Array.isArray(ffmpegConfig.transcoding.defaultResolutions)) {
+                    process.env.DEFAULT_RESOLUTIONS = JSON.stringify(ffmpegConfig.transcoding.defaultResolutions);
+                }
+                if (ffmpegConfig.transcoding.maxConcurrent != null) {
+                    process.env.MAX_CONCURRENT_TRANSCODES = String(ffmpegConfig.transcoding.maxConcurrent);
+                }
             }
-        }
-        if (ffmpegConfig && ffmpegConfig.limits) {
-            if (ffmpegConfig.limits.maxFileSize) process.env.MAX_FILE_SIZE = String(ffmpegConfig.limits.maxFileSize);
-        }
-        if (ffmpegConfig && ffmpegConfig.monitoring) {
-            if (ffmpegConfig.monitoring.cpuMonitoringInterval != null) {
-                process.env.CPU_MONITORING_INTERVAL = String(ffmpegConfig.monitoring.cpuMonitoringInterval);
+            if (ffmpegConfig && ffmpegConfig.limits) {
+                if (ffmpegConfig.limits.maxFileSize) process.env.MAX_FILE_SIZE = String(ffmpegConfig.limits.maxFileSize);
             }
+            if (ffmpegConfig && ffmpegConfig.monitoring) {
+                if (ffmpegConfig.monitoring.cpuMonitoringInterval != null) {
+                    process.env.CPU_MONITORING_INTERVAL = String(ffmpegConfig.monitoring.cpuMonitoringInterval);
+                }
+            }
+        } else {
+            // Local/dev defaults when skipping SSM
+            if (!process.env.AAI_API_BASE) process.env.AAI_API_BASE = 'https://api.assemblyai.com/v2';
+            console.log('⚙️  SKIP_SSM enabled - using local defaults for config');
         }
 
         // Now that env is ready, register routes (modules may read env at load time)
