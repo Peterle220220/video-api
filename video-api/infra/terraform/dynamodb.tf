@@ -7,7 +7,7 @@ variable "ddb_table_name" {
 variable "manage_ddb" {
   description = "Whether Terraform should manage (create/import) the DynamoDB table"
   type        = bool
-  default     = true
+  default     = false
 }
 
 resource "aws_dynamodb_table" "main" {

@@ -8,6 +8,11 @@ variable "transcoder_service_name" {
   type        = string
   default     = ""
 }
+variable "manage_autoscaling" {
+  description = "Whether Terraform should attach Application Auto Scaling to ECS service"
+  type        = bool
+  default     = false
+}
 
 variable "transcoder_min_capacity" {
   description = "Minimum desired task count for transcoder service"
@@ -41,11 +46,17 @@ variable "transcoder_scale_in_cooldown" {
 
 locals {
   transcoder_service_name = var.transcoder_service_name != "" ? var.transcoder_service_name : "${var.app_name}-transcoder"
-  transcoder_resource_id  = "service/${aws_ecs_cluster.this.name}/${local.transcoder_service_name}"
+  transcoder_resource_id  = "service/${try(aws_ecs_cluster.this[0].name, var.app_name)}" 
+}
+
+# Only proceed when manage_ecs and manage_autoscaling are enabled
+locals {
+  enable_autoscaling = try(var.manage_ecs, false) && var.manage_autoscaling
 }
 
 # Attach Application Auto Scaling target to the ECS service desired count
 resource "aws_appautoscaling_target" "transcoder" {
+  count              = local.enable_autoscaling ? 1 : 0
   service_namespace  = "ecs"
   resource_id        = local.transcoder_resource_id
   scalable_dimension = "ecs:service:DesiredCount"
@@ -55,10 +66,11 @@ resource "aws_appautoscaling_target" "transcoder" {
 
 # Target Tracking policy: ECS Service Average CPU Utilization @ target (default 70%)
 resource "aws_appautoscaling_policy" "transcoder_target_cpu" {
+  count              = local.enable_autoscaling ? 1 : 0
   name               = "${var.app_name}-transcoder-target-cpu"
-  service_namespace  = aws_appautoscaling_target.transcoder.service_namespace
-  resource_id        = aws_appautoscaling_target.transcoder.resource_id
-  scalable_dimension = aws_appautoscaling_target.transcoder.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.transcoder[0].service_namespace
+  resource_id        = aws_appautoscaling_target.transcoder[0].resource_id
+  scalable_dimension = aws_appautoscaling_target.transcoder[0].scalable_dimension
   policy_type        = "TargetTrackingScaling"
 
   target_tracking_scaling_policy_configuration {
@@ -73,6 +85,7 @@ resource "aws_appautoscaling_policy" "transcoder_target_cpu" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "transcoder_queue_depth_high" {
+  count               = try(var.manage_sqs, false) ? 1 : 0
   alarm_name          = "transcoder-queue-depth-high"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -82,11 +95,12 @@ resource "aws_cloudwatch_metric_alarm" "transcoder_queue_depth_high" {
   statistic           = "Average"
   threshold           = 10
   dimensions = {
-    QueueName = aws_sqs_queue.transcode.name
+    QueueName = aws_sqs_queue.transcode[0].name
   }
 }
 
 resource "aws_cloudwatch_metric_alarm" "transcoder_oldest_age_high" {
+  count               = try(var.manage_sqs, false) ? 1 : 0
   alarm_name          = "transcoder-oldest-age-high"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -96,7 +110,7 @@ resource "aws_cloudwatch_metric_alarm" "transcoder_oldest_age_high" {
   statistic           = "Average"
   threshold           = 300
   dimensions = {
-    QueueName = aws_sqs_queue.transcode.name
+    QueueName = aws_sqs_queue.transcode[0].name
   }
 }
 

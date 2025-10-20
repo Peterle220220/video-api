@@ -14,22 +14,22 @@ output "ddb_table_name" {
 }
 
 output "sqs_transcode_url" {
-  value       = try(aws_sqs_queue.transcode.url, null)
+  value       = try(aws_sqs_queue.transcode[0].url, null)
   description = "SQS transcode URL"
 }
 
 output "sqs_transcode_dlq_url" {
-  value       = try(aws_sqs_queue.transcode_dlq.url, null)
+  value       = try(aws_sqs_queue.transcode_dlq[0].url, null)
   description = "SQS transcode DLQ URL"
 }
 
 output "sqs_transcribe_url" {
-  value       = try(aws_sqs_queue.transcribe.url, null)
+  value       = try(aws_sqs_queue.transcribe[0].url, null)
   description = "SQS transcribe URL"
 }
 
 output "sqs_transcribe_dlq_url" {
-  value       = try(aws_sqs_queue.transcribe_dlq.url, null)
+  value       = try(aws_sqs_queue.transcribe_dlq[0].url, null)
   description = "SQS transcribe DLQ URL"
 }
 
