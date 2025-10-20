@@ -8,6 +8,7 @@ RUN apk add --no-cache ffmpeg
 
 # Copy app and shared
 COPY shared /shared
+RUN ln -s /app/node_modules /shared/node_modules || true
 COPY transcoder-worker/src ./src
 
 ENV NODE_ENV=production

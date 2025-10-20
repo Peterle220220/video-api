@@ -3,6 +3,7 @@ WORKDIR /app
 COPY transcribe-worker/package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 COPY shared /shared
+RUN ln -s /app/node_modules /shared/node_modules || true
 COPY transcribe-worker/src ./src
 ENV NODE_ENV=production
 EXPOSE 3000

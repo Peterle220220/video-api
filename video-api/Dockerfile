@@ -20,6 +20,7 @@ RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit
 
 # Copy shared libs to absolute /shared so '../../../shared/...' resolves correctly
 COPY shared /shared
+RUN ln -s /app/node_modules /shared/node_modules || true
 # Copy API source code
 COPY video-api/src ./src
 
