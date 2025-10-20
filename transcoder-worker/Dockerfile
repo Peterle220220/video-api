@@ -1,7 +1,7 @@
 FROM node:20-alpine as base
 WORKDIR /app
-COPY transcoder-worker/package.json ./package.json
-RUN npm ci --omit=dev
+COPY transcoder-worker/package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 
 # Add ffmpeg
 RUN apk add --no-cache ffmpeg

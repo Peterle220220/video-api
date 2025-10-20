@@ -1,7 +1,7 @@
 FROM node:20-alpine
 WORKDIR /app
-COPY dlq-handler/package.json ./package.json
-RUN npm ci --omit=dev
+COPY dlq-handler/package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 COPY shared ./shared
 COPY dlq-handler/src ./src
 ENV NODE_ENV=production
