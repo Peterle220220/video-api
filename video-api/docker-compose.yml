@@ -14,6 +14,9 @@ services:
       - PORT=${PORT:-3000}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
       # Local paths removed to promote statelessness; use S3 for persistence
       # - UPLOAD_PATH=./uploads
       # - PROCESSED_PATH=./processed
@@ -25,7 +28,7 @@ services:
       - FFMPEG_FPS=${FFMPEG_FPS:-30}
       - DEFAULT_RESOLUTIONS=${DEFAULT_RESOLUTIONS:-["1280x720","854x480"]}
       - S3_BUCKET=cab432-a2-n12122882
-      - DDB_TABLE=videos
+      - DDB_TABLE=cab432-a2-n12122882-metadata
       - QUT_USERNAME=n12122882
       - ASSEMBLYAI_API_KEY=420c9f6d29f742e587313b9764794f45
       - SQS_TRANSCODE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-queue
@@ -70,7 +73,7 @@ services:
       - S3_BUCKET=cab432-a2-n12122882
       - S3_INPUT_BUCKET=cab432-a2-n12122882
       - S3_OUTPUT_BUCKET=cab432-a2-n12122882
-      - DDB_TABLE_VIDEOS=videos
+      - DDB_TABLE_VIDEOS=cab432-a2-n12122882-videos
       - FFMPEG_PRESET=${FFMPEG_PRESET:-fast}
       - FFMPEG_CRF=${FFMPEG_CRF:-22}
     depends_on: {}
@@ -90,7 +93,7 @@ services:
       - SQS_TRANSCRIBE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-queue
       - S3_BUCKET=cab432-a2-n12122882
       - S3_INPUT_BUCKET=cab432-a2-n12122882
-      - DDB_TABLE_VIDEOS=videos
+      - DDB_TABLE_VIDEOS=cab432-a2-n12122882-videos
       - ASSEMBLYAI_API_KEY=420c9f6d29f742e587313b9764794f45
     depends_on: {}
 
@@ -108,7 +111,7 @@ services:
       - AWS_REGION=ap-southeast-2
       - SQS_TRANSCODE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-dlq
       - SQS_TRANSCRIBE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-dlq
-      - DDB_TABLE_VIDEOS=videos
+      - DDB_TABLE_VIDEOS=cab432-a2-n12122882-videos
     depends_on: {}
 
   # Load generator using k6 to drive CPU test for 5 minutes
