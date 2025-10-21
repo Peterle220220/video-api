@@ -10,7 +10,7 @@ services:
     environment:
       - NODE_ENV=development
       - SKIP_SSM=${SKIP_SSM:-1}
-      - AWS_REGION=${AWS_REGION}
+      - AWS_REGION=ap-southeast-2
       - PORT=${PORT:-3000}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
@@ -24,18 +24,18 @@ services:
       - FFMPEG_CRF=${FFMPEG_CRF:-22}
       - FFMPEG_FPS=${FFMPEG_FPS:-30}
       - DEFAULT_RESOLUTIONS=${DEFAULT_RESOLUTIONS:-["1280x720","854x480"]}
-      - S3_BUCKET=${S3_BUCKET}
-      - DDB_TABLE=${DDB_TABLE}
-      - QUT_USERNAME=${QUT_USERNAME}
-      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
-      - SQS_TRANSCODE_URL=${SQS_TRANSCODE_URL}
-      - SQS_TRANSCRIBE_URL=${SQS_TRANSCRIBE_URL}
-      - SQS_TRANSCODE_DLQ_URL=${SQS_TRANSCODE_DLQ_URL}
-      - SQS_TRANSCRIBE_DLQ_URL=${SQS_TRANSCRIBE_DLQ_URL}
-      - COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
-      - COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
-      - COGNITO_CLIENT_SECRET=${COGNITO_CLIENT_SECRET}
-      - COGNITO_JWKS_URI=${COGNITO_JWKS_URI}
+      - S3_BUCKET=cab432-a2-n12122882
+      - DDB_TABLE=videos
+      - QUT_USERNAME=n12122882
+      - ASSEMBLYAI_API_KEY=420c9f6d29f742e587313b9764794f45
+      - SQS_TRANSCODE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode
+      - SQS_TRANSCRIBE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-queue
+      - SQS_TRANSCODE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-dlq
+      - SQS_TRANSCRIBE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-dlq
+      - COGNITO_USER_POOL_ID=ap-southeast-2_1234567890
+      - COGNITO_CLIENT_ID=1234567890
+      - COGNITO_CLIENT_SECRET=1234567890
+      - COGNITO_JWKS_URI=https://cognito-idp.ap-southeast-2.amazonaws.com/1234567890/.well-known/jwks.json
     ports:
       - "3000:3000"
     # Remove bind mounts to avoid local persistent state
@@ -65,12 +65,12 @@ services:
     restart: unless-stopped
     environment:
       - SERVICE_NAME=transcoder-worker
-      - AWS_REGION=${AWS_REGION}
-      - SQS_TRANSCODE_URL=${SQS_TRANSCODE_URL}
-      - S3_BUCKET=${S3_BUCKET}
-      - S3_INPUT_BUCKET=${S3_INPUT_BUCKET:-${S3_BUCKET}}
-      - S3_OUTPUT_BUCKET=${S3_OUTPUT_BUCKET:-${S3_BUCKET}}
-      - DDB_TABLE_VIDEOS=${DDB_TABLE_VIDEOS}
+      - AWS_REGION=ap-southeast-2
+      - SQS_TRANSCODE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode
+      - S3_BUCKET=cab432-a2-n12122882
+      - S3_INPUT_BUCKET=cab432-a2-n12122882
+      - S3_OUTPUT_BUCKET=cab432-a2-n12122882
+      - DDB_TABLE_VIDEOS=videos
       - FFMPEG_PRESET=${FFMPEG_PRESET:-fast}
       - FFMPEG_CRF=${FFMPEG_CRF:-22}
     depends_on: {}
@@ -86,12 +86,12 @@ services:
     restart: unless-stopped
     environment:
       - SERVICE_NAME=transcribe-worker
-      - AWS_REGION=${AWS_REGION}
-      - SQS_TRANSCRIBE_URL=${SQS_TRANSCRIBE_URL}
-      - S3_BUCKET=${S3_BUCKET}
-      - S3_INPUT_BUCKET=${S3_INPUT_BUCKET:-${S3_BUCKET}}
-      - DDB_TABLE_VIDEOS=${DDB_TABLE_VIDEOS}
-      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
+      - AWS_REGION=ap-southeast-2
+      - SQS_TRANSCRIBE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-queue
+      - S3_BUCKET=cab432-a2-n12122882
+      - S3_INPUT_BUCKET=cab432-a2-n12122882
+      - DDB_TABLE_VIDEOS=videos
+      - ASSEMBLYAI_API_KEY=420c9f6d29f742e587313b9764794f45
     depends_on: {}
 
   # DLQ Handler (optional but recommended)
@@ -105,10 +105,10 @@ services:
     restart: unless-stopped
     environment:
       - SERVICE_NAME=dlq-handler
-      - AWS_REGION=${AWS_REGION}
-      - SQS_TRANSCODE_DLQ_URL=${SQS_TRANSCODE_DLQ_URL}
-      - SQS_TRANSCRIBE_DLQ_URL=${SQS_TRANSCRIBE_DLQ_URL}
-      - DDB_TABLE_VIDEOS=${DDB_TABLE_VIDEOS}
+      - AWS_REGION=ap-southeast-2
+      - SQS_TRANSCODE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-dlq
+      - SQS_TRANSCRIBE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-dlq
+      - DDB_TABLE_VIDEOS=videos
     depends_on: {}
 
   # Load generator using k6 to drive CPU test for 5 minutes
