@@ -4,8 +4,8 @@ const { updateVideo } = require('../../shared/src/ddb/videos');
 const { parseMessageBody } = require('../../shared/src/types/messages');
 const dotenv = require('dotenv');
 dotenv.config();
-const DLQ_TRANSCODE_URL = process.env.SQS_TRANSCODE_DLQ_URL || '';
-const DLQ_TRANSCRIBE_URL = process.env.SQS_TRANSCRIBE_DLQ_URL || '';
+const DLQ_TRANSCODE_URL = process.env.SQS_TRANSCODE_DLQ_URL || 'https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-dlq';
+const DLQ_TRANSCRIBE_URL = process.env.SQS_TRANSCRIBE_DLQ_URL || 'https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-dlq';
 
 if (!DLQ_TRANSCODE_URL && !DLQ_TRANSCRIBE_URL) {
     console.error('At least one DLQ URL must be provided');

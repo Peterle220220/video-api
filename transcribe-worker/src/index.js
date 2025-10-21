@@ -6,7 +6,7 @@ const { presignGet, S3_INPUT_BUCKET } = require('../../shared/src/s3/io');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 const dotenv = require('dotenv');
 dotenv.config();
-const QUEUE_URL = process.env.SQS_TRANSCRIBE_URL || '';
+const QUEUE_URL = process.env.SQS_TRANSCRIBE_URL || 'https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-queue';
 const AAI_API_KEY = process.env.ASSEMBLYAI_API_KEY || process.env.AAI_API_KEY || '';
 
 if (!QUEUE_URL) { console.error('SQS_TRANSCRIBE_URL is required'); process.exit(1); }

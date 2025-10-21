@@ -5,6 +5,8 @@ services:
       context: ..
       dockerfile: video-api/Dockerfile
     container_name: video_api_app
+    volumes:
+      - ~/.aws:/home/node/.aws:ro
     environment:
       - NODE_ENV=development
       - SKIP_SSM=${SKIP_SSM:-1}
@@ -58,6 +60,8 @@ services:
       context: ..
       dockerfile: transcoder-worker/Dockerfile
     container_name: transcoder_worker
+    volumes:
+      - ~/.aws:/root/.aws:ro
     restart: unless-stopped
     environment:
       - SERVICE_NAME=transcoder-worker
@@ -77,6 +81,8 @@ services:
       context: ..
       dockerfile: transcribe-worker/Dockerfile
     container_name: transcribe_worker
+    volumes:
+      - ~/.aws:/root/.aws:ro
     restart: unless-stopped
     environment:
       - SERVICE_NAME=transcribe-worker
@@ -94,6 +100,8 @@ services:
       context: ..
       dockerfile: dlq-handler/Dockerfile
     container_name: dlq_handler
+    volumes:
+      - ~/.aws:/root/.aws:ro
     restart: unless-stopped
     environment:
       - SERVICE_NAME=dlq-handler
