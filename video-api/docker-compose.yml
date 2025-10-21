@@ -5,6 +5,15 @@ services:
       context: ..
       dockerfile: video-api/Dockerfile
     container_name: video_api_app
+    # Resource limits to prevent EC2 crash
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     volumes:
       - ~/.aws:/home/node/.aws:ro
     environment:
@@ -22,11 +31,11 @@ services:
       # - PROCESSED_PATH=./processed
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-500MB}
       - CPU_MONITORING_INTERVAL=${CPU_MONITORING_INTERVAL:-1000}
-      - FFMPEG_THREADS=${FFMPEG_THREADS:-2}
-      - FFMPEG_PRESET=${FFMPEG_PRESET:-fast}
-      - FFMPEG_CRF=${FFMPEG_CRF:-22}
-      - FFMPEG_FPS=${FFMPEG_FPS:-30}
-      - DEFAULT_RESOLUTIONS=${DEFAULT_RESOLUTIONS:-["1280x720","854x480"]}
+      - FFMPEG_THREADS=${FFMPEG_THREADS:-1}
+      - FFMPEG_PRESET=${FFMPEG_PRESET:-ultrafast}
+      - FFMPEG_CRF=${FFMPEG_CRF:-28}
+      - FFMPEG_FPS=${FFMPEG_FPS:-24}
+      - DEFAULT_RESOLUTIONS=${DEFAULT_RESOLUTIONS:-["854x480"]}
       - S3_BUCKET=cab432-a2-n12122882
       - DDB_TABLE=cab432-a2-n12122882-metadata
       - QUT_USERNAME=n12122882
@@ -63,6 +72,15 @@ services:
       context: ..
       dockerfile: transcoder-worker/Dockerfile
     container_name: transcoder_worker
+    # Resource limits for transcoder worker
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     volumes:
       - ~/.aws:/root/.aws:ro
     restart: unless-stopped
@@ -74,8 +92,8 @@ services:
       - S3_INPUT_BUCKET=cab432-a2-n12122882
       - S3_OUTPUT_BUCKET=cab432-a2-n12122882
       - DDB_TABLE_VIDEOS=cab432-a2-n12122882-videos
-      - FFMPEG_PRESET=${FFMPEG_PRESET:-fast}
-      - FFMPEG_CRF=${FFMPEG_CRF:-22}
+      - FFMPEG_PRESET=${FFMPEG_PRESET:-ultrafast}
+      - FFMPEG_CRF=${FFMPEG_CRF:-28}
     depends_on: {}
 
   # Transcribe Worker (AssemblyAI)
@@ -84,6 +102,15 @@ services:
       context: ..
       dockerfile: transcribe-worker/Dockerfile
     container_name: transcribe_worker
+    # Resource limits for transcribe worker
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     volumes:
       - ~/.aws:/root/.aws:ro
     restart: unless-stopped
@@ -103,6 +130,15 @@ services:
       context: ..
       dockerfile: dlq-handler/Dockerfile
     container_name: dlq_handler
+    # Resource limits for DLQ handler
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
     volumes:
       - ~/.aws:/root/.aws:ro
     restart: unless-stopped
@@ -126,7 +162,7 @@ services:
       - API_BASE=http://api:3000
       - AUTH_TOKEN=${AUTH_TOKEN:-REPLACE_WITH_YOUR_TOKEN}
       - TEST_DURATION=5m
-      - VUS=25
+      - VUS=5
     volumes:
       - ./scripts:/scripts
     entrypoint: ["k6", "run", "/scripts/test-cpu.js"]
@@ -143,7 +179,7 @@ services:
       - USERNAME=${LOAD_USERNAME:-admin}
       - PASSWORD=${LOAD_PASSWORD:-admin123}
       - MINUTES=${LOAD_MINUTES:-5}
-      - VUS=${LOAD_VUS:-4}
+      - VUS=${LOAD_VUS:-2}
       - SLEEP_BETWEEN=${LOAD_SLEEP:-1}
       - VIDEO_PATH=/app/sample.mp4
     volumes:
