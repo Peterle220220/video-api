@@ -1,5 +1,5 @@
-function buildTranscodeMessage({ videoId, ownerId, inputKey, variants = ['1280x720', '854x480'], outputFormat = 'mp4' }) {
-    return {
+function buildTranscodeMessage({ videoId, ownerId, inputKey, variants = ['1280x720', '854x480'], outputFormat = 'mp4', 'qut-username': qutUsername }) {
+    const message = {
         type: 'transcode',
         videoId,
         ownerId,
@@ -7,15 +7,23 @@ function buildTranscodeMessage({ videoId, ownerId, inputKey, variants = ['1280x7
         variants,
         outputFormat,
     };
+    if (qutUsername) {
+        message['qut-username'] = qutUsername;
+    }
+    return message;
 }
 
-function buildTranscribeMessage({ videoId, ownerId, inputKey }) {
-    return {
+function buildTranscribeMessage({ videoId, ownerId, inputKey, 'qut-username': qutUsername }) {
+    const message = {
         type: 'transcribe',
         videoId,
         ownerId,
         inputKey,
     };
+    if (qutUsername) {
+        message['qut-username'] = qutUsername;
+    }
+    return message;
 }
 
 function parseMessageBody(msg) {

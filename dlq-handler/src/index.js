@@ -1,6 +1,6 @@
 const { startPolling } = require('../../shared/src/sqs/poller');
 const { logger } = require('../../shared/src/logger');
-const { updateVideo } = require('../../shared/src/ddb/videos');
+const { updateVideo, updateVideoWithCompositeKey } = require('../../shared/src/ddb/videos');
 const { parseMessageBody } = require('../../shared/src/types/messages');
 const dotenv = require('dotenv');
 dotenv.config();
@@ -19,7 +19,19 @@ async function handleDlq(message) {
     const ctx = { videoId, messageId: message.MessageId };
     logger.warn(ctx, 'Handling DLQ message');
     if (videoId) {
-        await updateVideo(videoId, { status: 'failed', errorReason: reason });
+        // Try to determine the correct schema to use
+        // Check if we have qut-username in the message, otherwise use ownerId
+        const qutUsername = body['qut-username'] || body.ownerId;
+        if (qutUsername) {
+            // Use composite key schema (single-table design)
+            await updateVideoWithCompositeKey(qutUsername, videoId, { 
+                status: 'failed', 
+                errorReason: reason 
+            });
+        } else {
+            // Fallback to simple schema
+            await updateVideo(videoId, { status: 'failed', errorReason: reason });
+        }
     }
 }
 

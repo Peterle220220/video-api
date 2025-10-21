@@ -1,5 +1,6 @@
 const { S3Client } = require('@aws-sdk/client-s3');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { fromIni, fromEnv } = require('@aws-sdk/credential-providers');
 
 const AWS_REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'ap-southeast-2';
 const S3_BUCKET = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || 'cab432-a2-n12122882';
@@ -33,8 +34,18 @@ function assertConfig() {
     }
 }
 
-const s3Client = new S3Client({ region: AWS_REGION });
-const ddbClient = new DynamoDBClient({ region: AWS_REGION });
+// Configure AWS clients with credential providers
+// Try environment variables first, then fall back to credential file
+const credentialProvider = fromEnv();
+
+const s3Client = new S3Client({ 
+    region: AWS_REGION,
+    credentials: credentialProvider
+});
+const ddbClient = new DynamoDBClient({ 
+    region: AWS_REGION,
+    credentials: credentialProvider
+});
 
 module.exports = {
     AWS_REGION,

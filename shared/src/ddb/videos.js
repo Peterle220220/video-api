@@ -59,6 +59,39 @@ async function updateVideo(videoId, updates) {
     return res.Attributes || null;
 }
 
+// New function for single-table design with composite key
+async function updateVideoWithCompositeKey(qutUsername, videoId, updates) {
+    const keys = Object.keys(updates || {});
+    if (!keys.length) return await getVideoWithCompositeKey(qutUsername, videoId);
+    const exprNames = {};
+    const exprValues = { ':updatedAt': new Date().toISOString() };
+    const sets = ['updatedAt = :updatedAt'];
+    for (const key of keys) {
+        const nk = `#${key.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+        const vk = `:${key.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+        exprNames[nk] = key;
+        exprValues[vk] = updates[key];
+        sets.push(`${nk} = ${vk}`);
+    }
+    const res = await ddbDocClient.send(new UpdateCommand({
+        TableName: DDB_TABLE_VIDEOS,
+        Key: { 'qut-username': qutUsername, sk: `VIDEO#${videoId}` },
+        UpdateExpression: `SET ${sets.join(', ')}`,
+        ExpressionAttributeNames: exprNames,
+        ExpressionAttributeValues: exprValues,
+        ReturnValues: 'ALL_NEW',
+    }));
+    return res.Attributes || null;
+}
+
+async function getVideoWithCompositeKey(qutUsername, videoId) {
+    const res = await ddbDocClient.send(new GetCommand({
+        TableName: DDB_TABLE_VIDEOS,
+        Key: { 'qut-username': qutUsername, sk: `VIDEO#${videoId}` }
+    }));
+    return res.Item || null;
+}
+
 async function appendOutput(videoId, output) {
     const res = await ddbDocClient.send(new UpdateCommand({
         TableName: DDB_TABLE_VIDEOS,
@@ -97,6 +130,8 @@ module.exports = {
     putVideo,
     getVideo,
     updateVideo,
+    updateVideoWithCompositeKey,
+    getVideoWithCompositeKey,
     appendOutput,
     markFailed,
     queryByOwner,

@@ -57,7 +57,14 @@ router.post('/start', authenticateToken, async (req, res) => {
         try {
             const queueUrl = process.env.SQS_TRANSCODE_URL;
             if (!queueUrl) return res.status(500).json({ error: 'SQS_TRANSCODE_URL not set' });
-            const msg = buildTranscodeMessage({ videoId, ownerId: req.user?.id || 'unknown', inputKey: inputSource.key, variants: resolutionList, outputFormat: 'mp4' });
+            const msg = buildTranscodeMessage({ 
+                videoId, 
+                ownerId: req.user?.id || 'unknown', 
+                'qut-username': process.env.QUT_USERNAME || 'n12122882@qut.edu.au',
+                inputKey: inputSource.key, 
+                variants: resolutionList, 
+                outputFormat: 'mp4' 
+            });
             await send(queueUrl, msg);
         } catch (err) {
             console.error('Failed to enqueue transcode job:', err);

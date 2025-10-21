@@ -1,0 +1,20 @@
+﻿{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:Query",
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:UpdateItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:Scan"
+            ],
+            "Resource": [
+                "arn:aws:dynamodb:ap-southeast-2:901444280953:table/cab432-a2-n12122882-metadata",
+                "arn:aws:dynamodb:ap-southeast-2:901444280953:table/cab432-a2-n12122882-metadata/index/*"
+            ]
+        }
+    ]
+}

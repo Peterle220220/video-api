@@ -70,7 +70,14 @@ async function handleTranscodeMessage(message) {
         // Emit transcribe job if configured
         if (process.env.SQS_TRANSCRIBE_URL) {
             const inputUrl = process.env.INPUT_PRESIGN_DISABLED ? null : null; // placeholder; presign at API time
-            const payload = { type: 'transcribe', videoId, ownerId, inputKey, presignedUrl: inputUrl };
+            const payload = { 
+                type: 'transcribe', 
+                videoId, 
+                ownerId, 
+                inputKey, 
+                presignedUrl: inputUrl,
+                'qut-username': body['qut-username'] || body.ownerId
+            };
             await send(process.env.SQS_TRANSCRIBE_URL, payload);
             logger.info(ctx, 'Emitted transcribe job');
         }

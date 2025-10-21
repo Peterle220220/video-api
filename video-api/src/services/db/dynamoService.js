@@ -33,25 +33,36 @@ async function getVideo(videoId) {
 
 // List all videos for current QUT user (SK begins with VIDEO#), sorted by updated_at desc
 async function listVideos() {
-    const items = [];
-    let lastKey = undefined;
-    do {
-        const res = await docClient.send(new QueryCommand({
-            TableName: DDB_TABLE,
-            KeyConditionExpression: '#pk = :u AND begins_with(#sk, :videoPrefix)',
-            ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk' },
-            ExpressionAttributeValues: { ':u': QUT_USERNAME, ':videoPrefix': 'VIDEO#' },
-            ExclusiveStartKey: lastKey
-        }));
-        if (res.Items && res.Items.length) items.push(...res.Items);
-        lastKey = res.LastEvaluatedKey;
-    } while (lastKey);
-    items.sort((a, b) => {
-        const au = a.updated_at || a.created_at || 0;
-        const bu = b.updated_at || b.created_at || 0;
-        return new Date(bu) - new Date(au);
-    });
-    return items;
+    try {
+        const items = [];
+        let lastKey = undefined;
+        do {
+            const res = await docClient.send(new QueryCommand({
+                TableName: DDB_TABLE,
+                KeyConditionExpression: '#pk = :u AND begins_with(#sk, :videoPrefix)',
+                ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk' },
+                ExpressionAttributeValues: { ':u': QUT_USERNAME, ':videoPrefix': 'VIDEO#' },
+                ExclusiveStartKey: lastKey
+            }));
+            if (res.Items && res.Items.length) items.push(...res.Items);
+            lastKey = res.LastEvaluatedKey;
+        } while (lastKey);
+        items.sort((a, b) => {
+            const au = a.updated_at || a.created_at || 0;
+            const bu = b.updated_at || b.created_at || 0;
+            return new Date(bu) - new Date(au);
+        });
+        return items;
+    } catch (error) {
+        if (error.name === 'AccessDeniedException') {
+            console.error('❌ DynamoDB Access Denied. Please check IAM permissions.');
+            console.error('Required permissions: dynamodb:Query on table:', DDB_TABLE);
+            console.error('Current user needs DynamoDB permissions.');
+            // Return empty array instead of throwing error
+            return [];
+        }
+        throw error;
+    }
 }
 
 async function updateVideoDescription(videoId, description) {
