@@ -34,7 +34,7 @@ services:
       - SQS_TRANSCRIBE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-dlq
       - COGNITO_USER_POOL_ID=ap-southeast-2_1234567890
       - COGNITO_CLIENT_ID=1o00oog3qb82t1qgvi62lfv9fa
-      - COGNITO_CLIENT_SECRET=osa35j8hoaqs1ejnar59h2k47ovl8ujn6llj75vect1kpoo18td
+      - COGNITO_CLIENT_SECRET=1oftmplton69rcfvg4egrme6ia2vkheebc9u7u1im9l6gqdf48ql
       - COGNITO_JWKS_URI=https://cognito-idp.ap-southeast-2.amazonaws.com/ap-southeast-2_wgTgFFTuB/.well-known/jwks.json
     ports:
       - "3000:3000"
