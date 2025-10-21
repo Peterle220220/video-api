@@ -1,7 +1,9 @@
 services:
   # Video API Application
   api:
-    build: .
+    build:
+      context: ..
+      dockerfile: video-api/Dockerfile
     container_name: video_api_app
     environment:
       - NODE_ENV=development
