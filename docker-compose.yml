@@ -1,0 +1,171 @@
+version: '3.8'
+
+services:
+  # Web Service (Frontend)
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_AUTH_SERVICE_URL=http://localhost:3001
+      - REACT_APP_TRANSCODING_SERVICE_URL=http://localhost:3002
+      - REACT_APP_UPLOAD_SERVICE_URL=http://localhost:3003
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Auth Service
+  auth:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
+      - COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Transcoding Service
+  transcoding:
+    build:
+      context: ./transcoding-service
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - AUTH_SERVICE_URL=http://auth:3001
+      - UPLOAD_SERVICE_URL=http://upload:3003
+      - SQS_TRANSCODING_QUEUE_URL=${SQS_TRANSCODING_QUEUE_URL}
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3002/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    # Resource limits for CPU-intensive tasks
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # Upload Service
+  upload:
+    build:
+      context: ./upload-service
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - ASSEMBLY_AI_API_KEY=${ASSEMBLY_AI_API_KEY}
+      - AAI_API_BASE=${AAI_API_BASE}
+      - AUTH_SERVICE_URL=http://auth:3001
+      - TRANSCODING_SERVICE_URL=http://transcoding:3002
+      - SQS_UPLOAD_QUEUE_URL=${SQS_UPLOAD_QUEUE_URL}
+      - SQS_STORAGE_QUEUE_URL=${SQS_STORAGE_QUEUE_URL}
+    networks:
+      - microservices-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3003/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # SQS Worker for Background Processing
+  sqs-worker:
+    build:
+      context: ./sqs-worker
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - ASSEMBLY_AI_API_KEY=${ASSEMBLY_AI_API_KEY}
+      - AAI_API_BASE=${AAI_API_BASE}
+      - SQS_TRANSCODING_QUEUE_URL=${SQS_TRANSCODING_QUEUE_URL}
+      - SQS_UPLOAD_QUEUE_URL=${SQS_UPLOAD_QUEUE_URL}
+      - SQS_STORAGE_QUEUE_URL=${SQS_STORAGE_QUEUE_URL}
+      - SQS_NOTIFICATIONS_QUEUE_URL=${SQS_NOTIFICATIONS_QUEUE_URL}
+    volumes:
+      - ./shared:/app/shared:ro
+    networks:
+      - microservices-network
+    restart: unless-stopped
+    # Resource limits for background processing
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Load Balancer (Nginx)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - web
+      - auth
+      - transcoding
+      - upload
+    networks:
+      - microservices-network
+    restart: unless-stopped
+
+networks:
+  microservices-network:
+    driver: bridge
+
+volumes:
+  s3-data:
+  dynamodb-data:

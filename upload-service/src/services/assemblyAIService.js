@@ -1,0 +1,283 @@
+const ffmpeg = require('fluent-ffmpeg');
+const path = require('path');
+const fs = require('fs').promises;
+const fsSync = require('fs');
+const os = require('os');
+const { v4: uuidv4 } = require('uuid');
+const { uploadFileStream, uploadBuffer, buildMetaKey, presignDownload } = require('./s3Service');
+const AAI_API_BASE = process.env.AAI_API_BASE;
+var AAI_API_KEY = process.env.AAI_API_KEY;
+const secret_name = "cab432-a2-n12122882/ASSEMBLYAI_API_KEY";
+
+const client = null;
+async function assertApiKey() {
+    if (!AAI_API_KEY) {
+        let response;
+
+        try {
+          response = await client.send(
+            new GetSecretValueCommand({
+              SecretId: secret_name,
+              VersionStage: "AWSCURRENT", // VersionStage defaults to AWSCURRENT if unspecified
+            })
+          );
+        } catch (error) {
+          // For a list of exceptions thrown, see
+          // https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+          throw error;
+        }
+        
+        const secretString = response.SecretString || '';
+        try {
+            const parsed = JSON.parse(secretString);
+            AAI_API_KEY = parsed?.AAI_API_KEY || parsed?.apiKey || parsed?.key || secretString;
+        } catch (_) {
+            // SecretString có thể đã là chuỗi token thô
+            AAI_API_KEY = secretString;
+        }
+        // Cache vào env để các chỗ khác dùng lại
+        process.env.AAI_API_KEY = AAI_API_KEY;
+    }
+}
+
+async function ensureDir(dirPath) { await fs.mkdir(dirPath, { recursive: true }); }
+
+async function extractAudioMp3(inputVideoPath, outputAudioPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg(inputVideoPath)
+            .noVideo()
+            .audioCodec('libmp3lame')
+            .audioBitrate('192k')
+            .audioChannels(2)
+            .audioFrequency(44100)
+            .format('mp3')
+            .on('end', () => resolve(outputAudioPath))
+            .on('error', (err) => reject(err))
+            .save(outputAudioPath);
+    });
+}
+
+async function extractAudioM4a(inputVideoPath, outputAudioPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg(inputVideoPath)
+            .noVideo()
+            .audioCodec('aac')
+            .audioBitrate('128k')
+            .audioChannels(2)
+            .audioFrequency(44100)
+            .format('ipod') // m4a
+            .on('end', () => resolve(outputAudioPath))
+            .on('error', (err) => reject(err))
+            .save(outputAudioPath);
+    });
+}
+
+async function extractAudioWav(inputVideoPath, outputAudioPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg(inputVideoPath)
+            .noVideo()
+            .audioChannels(1)
+            .audioFrequency(16000)
+            .format('wav')
+            .on('end', () => resolve(outputAudioPath))
+            .on('error', (err) => reject(err))
+            .save(outputAudioPath);
+    });
+}
+
+async function extractBestAudio(inputVideoPath, folder) {
+    // Try MP3 (preferred), then M4A, then WAV
+    const mp3Path = path.join(folder, 'audio.mp3');
+    try {
+        await extractAudioMp3(inputVideoPath, mp3Path);
+        return mp3Path;
+    } catch (e1) {
+        // Fallback to M4A
+        const m4aPath = path.join(folder, 'audio.m4a');
+        try {
+            await extractAudioM4a(inputVideoPath, m4aPath);
+            return m4aPath;
+        } catch (e2) {
+            // Fallback to WAV
+            const wavPath = path.join(folder, 'audio.wav');
+            await extractAudioWav(inputVideoPath, wavPath);
+            return wavPath;
+        }
+    }
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function uploadToAssemblyAI(filePath) {
+    await assertApiKey();
+    const size = fsSync.statSync(filePath).size;
+    const maxAttempts = 3;
+    let lastErr;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const stream = fsSync.createReadStream(filePath);
+            const res = await fetch(`${AAI_API_BASE}/upload`, {
+                method: 'POST',
+                headers: {
+                    Authorization: AAI_API_KEY,
+                    'Content-Type': 'application/octet-stream',
+                    'Content-Length': String(size),
+                    'Accept': 'application/json',
+                    'User-Agent': 'video-api/1.0',
+                },
+                // Required by Node.js fetch when sending a streamed body
+                duplex: 'half',
+                body: stream,
+            });
+            if (!res.ok) {
+                const text = await res.text().catch(() => '');
+                throw new Error(`AssemblyAI upload failed: ${res.status} ${text}`);
+            }
+            const data = await res.json();
+            if (!data || !data.upload_url) throw new Error('AssemblyAI upload: missing upload_url');
+            return data.upload_url;
+        } catch (err) {
+            lastErr = err;
+            const delay = Math.min(1000 * attempt, 3000);
+            await sleep(delay);
+        }
+    }
+    throw lastErr || new Error('AssemblyAI upload failed: fetch failed');
+}
+
+async function requestTranscription(audioUrl) {
+    await assertApiKey();
+    const payload = {
+        audio_url: audioUrl,
+        // Auto chapters cannot be enabled together with summarization; keep summarization by default
+        // auto_chapters: true,
+        auto_highlights: true,
+        summarization: true,
+        summary_model: 'informative',
+        summary_type: 'paragraph',
+        speaker_labels: false,
+        punctuate: true,
+        format_text: true,
+        language_detection: true,
+    };
+    const res = await fetch(`${AAI_API_BASE}/transcript`, {
+        method: 'POST',
+        headers: {
+            Authorization: AAI_API_KEY,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`AssemblyAI transcript request failed: ${res.status} ${text}`);
+    }
+    const data = await res.json();
+    if (!data || !data.id) throw new Error('AssemblyAI transcript: missing id');
+    return data.id;
+}
+
+async function fetchTranscript(transcriptId) {
+    await assertApiKey();
+    const res = await fetch(`${AAI_API_BASE}/transcript/${transcriptId}`, {
+        method: 'GET',
+        headers: { Authorization: AAI_API_KEY },
+    });
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`AssemblyAI transcript fetch failed: ${res.status} ${text}`);
+    }
+    return await res.json();
+}
+
+async function pollTranscriptUntilComplete(transcriptId, options = {}) {
+    const { intervalMs = 3000, timeoutMs = 10 * 60 * 1000 } = options;
+    const start = Date.now();
+    while (true) {
+        const data = await fetchTranscript(transcriptId);
+        const status = String(data.status || '').toLowerCase();
+        if (status === 'completed') return data;
+        if (status === 'error') throw new Error(data.error || 'AssemblyAI processing error');
+        if (Date.now() - start > timeoutMs) throw new Error('AssemblyAI polling timed out');
+        await new Promise(r => setTimeout(r, intervalMs));
+    }
+}
+
+async function writeMetaFile(videoId, meta) {
+    const key = buildMetaKey(videoId);
+    const buf = Buffer.from(JSON.stringify(meta, null, 2), 'utf-8');
+    await uploadBuffer(key, buf, { contentType: 'application/json' });
+    return key;
+}
+
+// inputSource: { type: 's3', key } or { type: 'local', path }
+async function processVideoForSummary(videoId, inputSource) {
+    try {
+        // Resolve input path
+        let inputPath = null;
+        if (inputSource && inputSource.type === 'local' && inputSource.path) {
+            inputPath = inputSource.path;
+        } else if (inputSource && inputSource.type === 's3' && inputSource.key) {
+            // For AAI extraction, prefer to rely on transcoding input path if available locally.
+            // Here we fallback to download via presigned URL and stream to ffmpeg.
+            const url = await presignDownload(inputSource.key);
+            inputPath = url; // ffmpeg can read HTTP input
+        } else if (typeof inputSource === 'string') {
+            inputPath = inputSource;
+        } else {
+            throw new Error('Invalid input source for AssemblyAI');
+        }
+
+        // Extract audio (choose best available format) to temp folder
+        const folder = path.join(os.tmpdir(), `aai_${videoId}_${uuidv4()}`);
+        await ensureDir(folder);
+        const audioPath = await extractBestAudio(inputPath, folder);
+
+        // Upload and request transcript + summary
+        const uploadUrl = await uploadToAssemblyAI(audioPath);
+        const transcriptId = await requestTranscription(uploadUrl);
+
+        // Persist initial meta (pending)
+        await writeMetaFile(videoId, {
+            status: 'processing',
+            transcriptId,
+            uploadUrl,
+            audioPath: `s3://processed/${videoId}/${path.basename(audioPath)}`,
+            updatedAt: new Date().toISOString(),
+        });
+
+        // Poll until complete
+        const result = await pollTranscriptUntilComplete(transcriptId);
+
+        const meta = {
+            status: 'completed',
+            transcriptId,
+            uploadUrl,
+            summary: result.summary || null,
+            chapters: result.chapters || [],
+            highlights: result.auto_highlights_result || null,
+            text: result.text || null,
+            confidence: result.confidence || null,
+            words: result.words ? undefined : undefined, // keep file small by default
+            audioPath: `s3://processed/${videoId}/${path.basename(audioPath)}`,
+            updatedAt: new Date().toISOString(),
+        };
+        await writeMetaFile(videoId, meta);
+        return meta;
+    } catch (err) {
+        try {
+            await writeMetaFile(videoId, {
+                status: 'error',
+                error: err?.message || String(err),
+                updatedAt: new Date().toISOString(),
+            });
+        } catch (_) { }
+        throw err;
+    }
+}
+
+module.exports = {
+    processVideoForSummary,
+};
+
+

@@ -6,37 +6,65 @@ const { protocol, hostname } = window.location;
 const inferredApiBase = `${protocol}//${hostname}:3000`;
 const apiBaseUrl = process.env.REACT_APP_API_BASE || inferredApiBase;
 
+// Service-specific base URLs
+const authServiceUrl = process.env.REACT_APP_AUTH_SERVICE_URL || `${protocol}//${hostname}:3001`;
+const transcodingServiceUrl = process.env.REACT_APP_TRANSCODING_SERVICE_URL || `${protocol}//${hostname}:3002`;
+const uploadServiceUrl = process.env.REACT_APP_UPLOAD_SERVICE_URL || `${protocol}//${hostname}:3003`;
+
+// Main API client (for backward compatibility)
 export const api = axios.create({
     baseURL: apiBaseUrl,
 });
 
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
+// Service-specific API clients
+export const authApi = axios.create({
+    baseURL: authServiceUrl,
 });
 
-api.interceptors.response.use((response) => {
-    return response;
-}, (error) => {
-    const status = error && error.response && error.response.status;
-    if (status === 401) {
-        const requestUrl = (error && error.config && error.config.url) || '';
-        const isAuthRequest = requestUrl.startsWith('/api/auth');
-        const currentPath = window.location && window.location.pathname;
-        const isOnAuthPage = currentPath === '/login' || currentPath === '/register' || currentPath === '/forgot-password';
+export const transcodingApi = axios.create({
+    baseURL: transcodingServiceUrl,
+});
 
-        // Chỉ redirect khi 401 xảy ra trên các API protected, không phải auth endpoints
-        // và khi không đứng ở trang auth (để tránh refresh làm mất state lỗi trên Login)
-        if (!isAuthRequest && !isOnAuthPage) {
-            localStorage.removeItem('token');
-            window.location.href = '/login';
+export const uploadApi = axios.create({
+    baseURL: uploadServiceUrl,
+});
+
+// Common interceptor function
+const addAuthInterceptor = (axiosInstance) => {
+    axiosInstance.interceptors.request.use((config) => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
         }
-    }
-    return Promise.reject(error);
-});
+        return config;
+    });
+
+    axiosInstance.interceptors.response.use((response) => {
+        return response;
+    }, (error) => {
+        const status = error && error.response && error.response.status;
+        if (status === 401) {
+            const requestUrl = (error && error.config && error.config.url) || '';
+            const isAuthRequest = requestUrl.startsWith('/api/auth');
+            const currentPath = window.location && window.location.pathname;
+            const isOnAuthPage = currentPath === '/login' || currentPath === '/register' || currentPath === '/forgot-password';
+
+            // Chỉ redirect khi 401 xảy ra trên các API protected, không phải auth endpoints
+            // và khi không đứng ở trang auth (để tránh refresh làm mất state lỗi trên Login)
+            if (!isAuthRequest && !isOnAuthPage) {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }
+        }
+        return Promise.reject(error);
+    });
+};
+
+// Apply interceptors to all API clients
+addAuthInterceptor(api);
+addAuthInterceptor(authApi);
+addAuthInterceptor(transcodingApi);
+addAuthInterceptor(uploadApi);
 
 export const endpoints = {
     auth: {

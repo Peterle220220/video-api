@@ -1,0 +1,38 @@
+{
+  "name": "video-api-microservices",
+  "version": "1.0.0",
+  "description": "Microservices architecture for video transcoding with SQS communication",
+  "main": "index.js",
+  "scripts": {
+    "test-sqs": "node scripts/test-sqs.js",
+    "manage-sqs": "node scripts/manage-sqs.js",
+    "create-queues": "node scripts/create-sqs-queues.js",
+    "setup-queues": "node scripts/setup-existing-queues.js",
+    "test-existing": "node scripts/use-existing-queues.js",
+    "test-new-queues": "node scripts/test-new-queues.js",
+    "start": "docker-compose up --build",
+    "stop": "docker-compose down",
+    "test-auth": "node scripts/test-auth.js",
+    "test-upload": "node scripts/test-upload.js",
+    "test-transcoding": "node scripts/test-transcoding.js",
+    "test-all": "node scripts/test-all.js",
+    "quick-test": "node scripts/quick-test.js",
+    "dev": "node scripts/start-web-dev.js",
+    "web": "cd web && npm start"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.914.0",
+    "@aws-sdk/client-sqs": "^3.913.0",
+    "@aws-sdk/lib-dynamodb": "^3.914.0",
+    "dotenv": "^17.2.3"
+  },
+  "keywords": [
+    "microservices",
+    "video",
+    "transcoding",
+    "sqs",
+    "aws"
+  ],
+  "author": "Senior Backend Architect",
+  "license": "MIT"
+}
