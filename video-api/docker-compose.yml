@@ -28,7 +28,7 @@ services:
       - DDB_TABLE=videos
       - QUT_USERNAME=n12122882
       - ASSEMBLYAI_API_KEY=420c9f6d29f742e587313b9764794f45
-      - SQS_TRANSCODE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode
+      - SQS_TRANSCODE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-queue
       - SQS_TRANSCRIBE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-queue
       - SQS_TRANSCODE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-dlq
       - SQS_TRANSCRIBE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-dlq
@@ -66,7 +66,7 @@ services:
     environment:
       - SERVICE_NAME=transcoder-worker
       - AWS_REGION=ap-southeast-2
-      - SQS_TRANSCODE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode
+      - SQS_TRANSCODE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-queue
       - S3_BUCKET=cab432-a2-n12122882
       - S3_INPUT_BUCKET=cab432-a2-n12122882
       - S3_OUTPUT_BUCKET=cab432-a2-n12122882
