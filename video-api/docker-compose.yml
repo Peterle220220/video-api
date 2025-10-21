@@ -21,6 +21,10 @@ services:
       - FFMPEG_FPS=30
       - DEFAULT_RESOLUTIONS=["1280x720","854x480"]
       - ASSEMBLYAI_API_KEY=f0f4e03646a543b4bc994995021222b0
+      - SQS_TRANSCODE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-queue
+      - SQS_TRANSCRIBE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-queue
+      - SQS_TRANSCODE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-dlq
+      - SQS_TRANSCRIBE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-dlq
     ports:
       - "3000:3000"
     # Remove bind mounts to avoid local persistent state
