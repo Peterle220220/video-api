@@ -15,10 +15,10 @@ function makeJobKey(videoId, jobId) {
 // Videos (stored with PK: qut-username, SK: VIDEO#<video_id>)
 async function putVideo(item) {
     const record = Object.assign({}, item, {
-        'qut-username': process.env.process.env.QUT_USERNAME || 'n12122882' || 'n12122882',
+        'qut-username': process.env.QUT_USERNAME || 'n12122882',
         sk: makeVideoKey(item.video_id)
     });
-    await docClient.send(new PutCommand({ TableName: DDB_TABLE, Item: record }));
+    await docClient.send(new PutCommand({ TableName: process.env.DYNAMODB_TABLE_NAME || 'cab432-a2-n12122882-metadata', Item: record }));
 }
 
 async function getVideo(videoId) {
@@ -69,32 +69,25 @@ async function putJob(item) {
     const videoId = item.video_id;
     const jobId = item.job_id;
     const record = Object.assign({}, item, {
-        'qut-username': process.env.process.env.QUT_USERNAME || 'n12122882' || 'n12122882',
+        'qut-username': process.env.QUT_USERNAME || 'n12122882',
         sk: makeJobKey(videoId, jobId)
     });
-    await docClient.send(new PutCommand({ TableName: DDB_TABLE, Item: record }));
-    // Invalidate potentially affected caches
-    try {
-        await cacheDel(`job:${process.env.QUT_USERNAME || 'n12122882'}:${jobId}`);
-        await cacheDel(`jobs:active:${process.env.QUT_USERNAME || 'n12122882'}`);
-    } catch (_) {}
+    await docClient.send(new PutCommand({ TableName: process.env.DYNAMODB_TABLE_NAME || 'cab432-a2-n12122882-metadata', Item: record }));
+    // Cache invalidation disabled for now
 }
 
 // Note: We don't know videoId from jobId alone; query by PK and filter by job_id
 async function getJob(jobId) {
-    const cacheKey = `job:${process.env.QUT_USERNAME || 'n12122882'}:${jobId}`;
-    return await withCache(cacheKey, 20, async () => {
-        // Query by PK and sort key prefix in KeyCondition; filter by job_id
-        const res = await docClient.send(new QueryCommand({
-            TableName: process.env.DYNAMODB_TABLE_NAME || 'cab432-a2-n12122882-metadata',
-            KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
-            ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk', '#jid': 'job_id' },
-            ExpressionAttributeValues: { ':u': process.env.QUT_USERNAME || 'n12122882', ':jobPrefix': 'JOB#', ':jid': jobId },
-            FilterExpression: '#jid = :jid',
-            Limit: 1
-        }));
-        return (res.Items && res.Items[0]) || null;
-    });
+    // Query by PK and sort key prefix in KeyCondition; filter by job_id
+    const res = await docClient.send(new QueryCommand({
+        TableName: process.env.DYNAMODB_TABLE_NAME || 'cab432-a2-n12122882-metadata',
+        KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
+        ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk', '#jid': 'job_id' },
+        ExpressionAttributeValues: { ':u': process.env.QUT_USERNAME || 'n12122882', ':jobPrefix': 'JOB#', ':jid': jobId },
+        FilterExpression: '#jid = :jid',
+        Limit: 1
+    }));
+    return (res.Items && res.Items[0]) || null;
 }
 
 async function updateJob(jobId, updates) {
@@ -120,12 +113,7 @@ async function updateJob(jobId, updates) {
         ExpressionAttributeValues: exprValues,
         ReturnValues: 'ALL_NEW'
     }));
-    // Invalidate caches
-    try {
-        await cacheDel(`job:${process.env.QUT_USERNAME || 'n12122882'}:${jobId}`);
-        // Active jobs list cache
-        await cacheDel(`jobs:active:${process.env.QUT_USERNAME || 'n12122882'}`);
-    } catch (_) {}
+    // Cache invalidation disabled for now
     return res.Attributes || null;
 }
 
@@ -150,17 +138,14 @@ async function deleteJob(jobId) {
 
 // List jobs currently in-flight (status = processing or pending)
 async function listActiveJobs() {
-    const cacheKey = `jobs:active:${process.env.QUT_USERNAME || 'n12122882'}`;
-    return await withCache(cacheKey, 15, async () => {
-        const res = await docClient.send(new QueryCommand({
-            TableName: process.env.DYNAMODB_TABLE_NAME || 'cab432-a2-n12122882-metadata',
-            KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
-            ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk', '#status': 'status' },
-            ExpressionAttributeValues: { ':u': process.env.QUT_USERNAME || 'n12122882', ':jobPrefix': 'JOB#', ':processing': 'processing', ':pending': 'pending' },
-            FilterExpression: '#status IN (:processing, :pending)'
-        }));
-        return res.Items || [];
-    });
+    const res = await docClient.send(new QueryCommand({
+        TableName: process.env.DYNAMODB_TABLE_NAME || 'cab432-a2-n12122882-metadata',
+        KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
+        ExpressionAttributeNames: { '#pk': 'qut-username', '#sk': 'sk', '#status': 'status' },
+        ExpressionAttributeValues: { ':u': process.env.QUT_USERNAME || 'n12122882', ':jobPrefix': 'JOB#', ':processing': 'processing', ':pending': 'pending' },
+        FilterExpression: '#status IN (:processing, :pending)'
+    }));
+    return res.Items || [];
 }
 
 // On startup, mark any in-flight jobs as failed (crash-safe, stateless)
