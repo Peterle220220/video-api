@@ -1,0 +1,35 @@
+{
+  "name": "web-frontend-service",
+  "version": "1.0.0",
+  "description": "Web Frontend Service for Video Processing Application",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "build": "npm run build:react && npm run build:server",
+    "build:react": "cd client && npm run build",
+    "build:server": "echo 'Server build complete'",
+    "test": "jest"
+  },
+  "keywords": [
+    "react",
+    "frontend",
+    "microservices"
+  ],
+  "author": "Video Processing Team",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.888.0",
+    "axios": "^1.11.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.1.0",
+    "socket.io": "^4.7.5",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.10"
+  }
+}

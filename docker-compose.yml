@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  # API Gateway Service
+  api-gateway:
+    build: ./api-gateway
+    container_name: api_gateway
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - AWS_REGION=ap-southeast-2
+      - COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
+      - COGNITO_JWKS_URI=${COGNITO_JWKS_URI}
+      - COGNITO_CLIENT_SECRET=${COGNITO_CLIENT_SECRET}
+      - STORAGE_QUEUE_URL=${STORAGE_QUEUE_URL}
+      - TRANSCODING_QUEUE_URL=${TRANSCODING_QUEUE_URL}
+      - NOTIFICATION_QUEUE_URL=${NOTIFICATION_QUEUE_URL}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode===200?0:1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Storage Service
+  storage-service:
+    build: ./storage-service
+    container_name: storage_service
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - AWS_REGION=ap-southeast-2
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - STORAGE_QUEUE_URL=${STORAGE_QUEUE_URL}
+      - TRANSCODING_QUEUE_URL=${TRANSCODING_QUEUE_URL}
+      - NOTIFICATION_QUEUE_URL=${NOTIFICATION_QUEUE_URL}
+    ports:
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3001/health', r => process.exit(r.statusCode===200?0:1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Video Processing Service
+  video-processing-service:
+    build: ./video-processing-service
+    container_name: video_processing_service
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - AWS_REGION=ap-southeast-2
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - JOBS_TABLE_NAME=${JOBS_TABLE_NAME}
+      - VIDEOS_TABLE_NAME=${VIDEOS_TABLE_NAME}
+      - STORAGE_QUEUE_URL=${STORAGE_QUEUE_URL}
+      - TRANSCODING_QUEUE_URL=${TRANSCODING_QUEUE_URL}
+      - NOTIFICATION_QUEUE_URL=${NOTIFICATION_QUEUE_URL}
+      - FFMPEG_THREADS=2
+      - FFMPEG_PRESET=fast
+      - FFMPEG_CRF=22
+      - FFMPEG_FPS=30
+      - MAX_CONCURRENT_TRANSCODES=2
+    ports:
+      - "3002:3002"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3002/health', r => process.exit(r.statusCode===200?0:1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Web Frontend Service
+  web-frontend:
+    build: ./web-frontend
+    container_name: web_frontend
+    environment:
+      - NODE_ENV=production
+      - PORT=3003
+      - AWS_REGION=ap-southeast-2
+      - STORAGE_QUEUE_URL=${STORAGE_QUEUE_URL}
+      - TRANSCODING_QUEUE_URL=${TRANSCODING_QUEUE_URL}
+      - NOTIFICATION_QUEUE_URL=${NOTIFICATION_QUEUE_URL}
+    ports:
+      - "3003:3003"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3003/health', r => process.exit(r.statusCode===200?0:1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes: {}
