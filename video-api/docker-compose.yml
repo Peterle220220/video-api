@@ -7,24 +7,33 @@ services:
     container_name: video_api_app
     environment:
       - NODE_ENV=development
-      - PORT=3000
-      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
-      - JWT_EXPIRES_IN=24h
+      - SKIP_SSM=${SKIP_SSM:-1}
+      - AWS_REGION=${AWS_REGION}
+      - PORT=${PORT:-3000}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
       # Local paths removed to promote statelessness; use S3 for persistence
       # - UPLOAD_PATH=./uploads
       # - PROCESSED_PATH=./processed
-      - MAX_FILE_SIZE=500MB
-      - CPU_MONITORING_INTERVAL=1000
-      - FFMPEG_THREADS=2
-      - FFMPEG_PRESET=fast
-      - FFMPEG_CRF=22
-      - FFMPEG_FPS=30
-      - DEFAULT_RESOLUTIONS=["1280x720","854x480"]
-      - ASSEMBLYAI_API_KEY=f0f4e03646a543b4bc994995021222b0
-      - SQS_TRANSCODE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-queue
-      - SQS_TRANSCRIBE_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-queue
-      - SQS_TRANSCODE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcode-dlq
-      - SQS_TRANSCRIBE_DLQ_URL=https://sqs.ap-southeast-2.amazonaws.com/901444280953/video-transcribe-dlq
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-500MB}
+      - CPU_MONITORING_INTERVAL=${CPU_MONITORING_INTERVAL:-1000}
+      - FFMPEG_THREADS=${FFMPEG_THREADS:-2}
+      - FFMPEG_PRESET=${FFMPEG_PRESET:-fast}
+      - FFMPEG_CRF=${FFMPEG_CRF:-22}
+      - FFMPEG_FPS=${FFMPEG_FPS:-30}
+      - DEFAULT_RESOLUTIONS=${DEFAULT_RESOLUTIONS:-["1280x720","854x480"]}
+      - S3_BUCKET=${S3_BUCKET}
+      - DDB_TABLE=${DDB_TABLE}
+      - QUT_USERNAME=${QUT_USERNAME}
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
+      - SQS_TRANSCODE_URL=${SQS_TRANSCODE_URL}
+      - SQS_TRANSCRIBE_URL=${SQS_TRANSCRIBE_URL}
+      - SQS_TRANSCODE_DLQ_URL=${SQS_TRANSCODE_DLQ_URL}
+      - SQS_TRANSCRIBE_DLQ_URL=${SQS_TRANSCRIBE_DLQ_URL}
+      - COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
+      - COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
+      - COGNITO_CLIENT_SECRET=${COGNITO_CLIENT_SECRET}
+      - COGNITO_JWKS_URI=${COGNITO_JWKS_URI}
     ports:
       - "3000:3000"
     # Remove bind mounts to avoid local persistent state
@@ -43,6 +52,55 @@ services:
       retries: 3
       start_period: 40s
 
+  # Transcoder Worker (FFmpeg)
+  transcoder-worker:
+    build:
+      context: ..
+      dockerfile: transcoder-worker/Dockerfile
+    container_name: transcoder_worker
+    restart: unless-stopped
+    environment:
+      - SERVICE_NAME=transcoder-worker
+      - AWS_REGION=${AWS_REGION}
+      - SQS_TRANSCODE_URL=${SQS_TRANSCODE_URL}
+      - S3_INPUT_BUCKET=${S3_INPUT_BUCKET:-${S3_BUCKET}}
+      - S3_OUTPUT_BUCKET=${S3_OUTPUT_BUCKET:-${S3_BUCKET}}
+      - DDB_TABLE_VIDEOS=${DDB_TABLE_VIDEOS}
+      - FFMPEG_PRESET=${FFMPEG_PRESET:-fast}
+      - FFMPEG_CRF=${FFMPEG_CRF:-22}
+    depends_on: {}
+
+  # Transcribe Worker (AssemblyAI)
+  transcribe-worker:
+    build:
+      context: ..
+      dockerfile: transcribe-worker/Dockerfile
+    container_name: transcribe_worker
+    restart: unless-stopped
+    environment:
+      - SERVICE_NAME=transcribe-worker
+      - AWS_REGION=${AWS_REGION}
+      - SQS_TRANSCRIBE_URL=${SQS_TRANSCRIBE_URL}
+      - S3_INPUT_BUCKET=${S3_INPUT_BUCKET:-${S3_BUCKET}}
+      - DDB_TABLE_VIDEOS=${DDB_TABLE_VIDEOS}
+      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
+    depends_on: {}
+
+  # DLQ Handler (optional but recommended)
+  dlq-handler:
+    build:
+      context: ..
+      dockerfile: dlq-handler/Dockerfile
+    container_name: dlq_handler
+    restart: unless-stopped
+    environment:
+      - SERVICE_NAME=dlq-handler
+      - AWS_REGION=${AWS_REGION}
+      - SQS_TRANSCODE_DLQ_URL=${SQS_TRANSCODE_DLQ_URL}
+      - SQS_TRANSCRIBE_DLQ_URL=${SQS_TRANSCRIBE_DLQ_URL}
+      - DDB_TABLE_VIDEOS=${DDB_TABLE_VIDEOS}
+    depends_on: {}
+
   # Load generator using k6 to drive CPU test for 5 minutes
   load:
     image: grafana/k6:0.49.0
@@ -53,7 +111,7 @@ services:
     environment:
       - K6_OUT=csv=/scripts/k6_results.csv
       - API_BASE=http://api:3000
-      - AUTH_TOKEN=REPLACE_WITH_YOUR_TOKEN
+      - AUTH_TOKEN=${AUTH_TOKEN:-REPLACE_WITH_YOUR_TOKEN}
       - TEST_DURATION=5m
       - VUS=25
     volumes:
@@ -69,11 +127,11 @@ services:
         condition: service_healthy
     environment:
       - API_BASE=http://api:3000
-      - USERNAME=admin
-      - PASSWORD=admin123
-      - MINUTES=5
-      - VUS=4
-      - SLEEP_BETWEEN=1
+      - USERNAME=${LOAD_USERNAME:-admin}
+      - PASSWORD=${LOAD_PASSWORD:-admin123}
+      - MINUTES=${LOAD_MINUTES:-5}
+      - VUS=${LOAD_VUS:-4}
+      - SLEEP_BETWEEN=${LOAD_SLEEP:-1}
       - VIDEO_PATH=/app/sample.mp4
     volumes:
       - ./scripts:/scripts:ro

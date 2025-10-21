@@ -4,7 +4,8 @@ const { parseMessageBody } = require('../../shared/src/types/messages');
 const { getVideo, updateVideo } = require('../../shared/src/ddb/videos');
 const { presignGet, S3_INPUT_BUCKET } = require('../../shared/src/s3/io');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-
+const dotenv = require('dotenv');
+dotenv.config();
 const QUEUE_URL = process.env.SQS_TRANSCRIBE_URL || '';
 const AAI_API_KEY = process.env.ASSEMBLYAI_API_KEY || process.env.AAI_API_KEY || '';
 

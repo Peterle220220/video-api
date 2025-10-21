@@ -9,7 +9,8 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { parseMessageBody } = require('../../shared/src/types/messages');
-
+const dotenv = require('dotenv');
+dotenv.config();
 const QUEUE_URL = process.env.SQS_TRANSCODE_URL || '';
 const VISIBILITY_SECONDS = Number(process.env.VISIBILITY_TIMEOUT_SEC || 1200); // 20m default
 

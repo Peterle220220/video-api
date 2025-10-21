@@ -7,8 +7,10 @@
   "type": "commonjs",
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.888.0",
-    "@aws-sdk/client-s3": "^3.888.0",
-    "@aws-sdk/client-sqs": "^3.888.0",
-    "@aws-sdk/lib-dynamodb": "^3.888.0"
+    "@aws-sdk/client-s3": "^3.913.0",
+    "@aws-sdk/client-sqs": "^3.913.0",
+    "@aws-sdk/lib-dynamodb": "^3.913.0",
+    "@aws-sdk/s3-request-presigner": "^3.913.0",
+    "uuid": "^13.0.0"
   }
 }

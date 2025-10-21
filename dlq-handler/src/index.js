@@ -2,7 +2,8 @@ const { startPolling } = require('../../shared/src/sqs/poller');
 const { logger } = require('../../shared/src/logger');
 const { updateVideo } = require('../../shared/src/ddb/videos');
 const { parseMessageBody } = require('../../shared/src/types/messages');
-
+const dotenv = require('dotenv');
+dotenv.config();
 const DLQ_TRANSCODE_URL = process.env.SQS_TRANSCODE_DLQ_URL || '';
 const DLQ_TRANSCRIBE_URL = process.env.SQS_TRANSCRIBE_DLQ_URL || '';
 
