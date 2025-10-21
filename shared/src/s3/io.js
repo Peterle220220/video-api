@@ -7,8 +7,9 @@ const path = require('path');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 
-const S3_INPUT_BUCKET = process.env.S3_INPUT_BUCKET || process.env.S3_BUCKET || process.env.AWS_S3_BUCKET;
-const S3_OUTPUT_BUCKET = process.env.S3_OUTPUT_BUCKET || process.env.S3_BUCKET || process.env.AWS_S3_BUCKET;
+const DEFAULT_S3_BUCKET = process.env.S3_BUCKET || process.env.AWS_S3_BUCKET || 'cab432-a2-n12122882';
+const S3_INPUT_BUCKET = process.env.S3_INPUT_BUCKET || DEFAULT_S3_BUCKET;
+const S3_OUTPUT_BUCKET = process.env.S3_OUTPUT_BUCKET || DEFAULT_S3_BUCKET;
 
 function normalizeKey(key) { return String(key).replace(/^\/+/, ''); }
 
