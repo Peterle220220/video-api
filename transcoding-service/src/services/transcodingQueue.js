@@ -1,4 +1,4 @@
-const SQSService = require('../../../shared/services/sqsService');
+const SQSService = require('../../shared/services/sqsService');
 const transcodingService = require('./transcodingService');
 const { updateJob, getJob } = require('./dynamoService');
 
