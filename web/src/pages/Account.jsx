@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api, endpoints } from '../services/api';
+import { authApi, endpoints } from '../services/api';
 import QRCode from 'qrcode';
 
 export default function Account() {
@@ -57,7 +57,7 @@ export default function Account() {
                                     const tokens = JSON.parse(localStorage.getItem('cognitoTokens') || '{}');
                                     const accessToken = tokens?.accessToken;
                                     if (!accessToken) throw new Error('Missing accessToken. Re-login required.');
-                                    const res = await api.post(endpoints.auth.totpAssociate, { accessToken, username: user?.username });
+                                    const res = await authApi.post(endpoints.auth.totpAssociate, { accessToken, username: user?.username });
                                     setAssoc(res?.data || null);
                                 } catch (e) {
                                     setErr(e?.response?.data?.error || e?.message || 'Failed to start TOTP');
@@ -89,7 +89,7 @@ export default function Account() {
                                         const tokens = JSON.parse(localStorage.getItem('cognitoTokens') || '{}');
                                         const accessToken = tokens?.accessToken;
                                         if (!accessToken) throw new Error('Missing accessToken. Re-login required.');
-                                        const res = await api.post(endpoints.auth.totpVerify, { accessToken, code: totpCode });
+                                        const res = await authApi.post(endpoints.auth.totpVerify, { accessToken, code: totpCode });
                                         if (res?.data?.success) {
                                             setMsg('TOTP enabled successfully');
                                         } else {
@@ -107,7 +107,7 @@ export default function Account() {
                                         const tokens = JSON.parse(localStorage.getItem('cognitoTokens') || '{}');
                                         const accessToken = tokens?.accessToken;
                                         if (!accessToken) throw new Error('Missing accessToken. Re-login required.');
-                                        const res = await api.post(endpoints.auth.mfaDisable, { accessToken });
+                                        const res = await authApi.post(endpoints.auth.mfaDisable, { accessToken });
                                         if (res?.data?.success) {
                                             setMsg('MFA disabled');
                                             setAssoc(null);

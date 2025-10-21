@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, endpoints } from '../services/api';
+import { authApi, endpoints } from '../services/api';
 
 export default function Login() {
 	const navigate = useNavigate();
@@ -18,7 +18,7 @@ export default function Login() {
 		setError('');
 		setLoading(true);
 		try {
-			const res = await api.post(endpoints.auth.login, { username, password });
+			const res = await authApi.post(endpoints.auth.login, { username, password });
 			if (res?.data?.mfaRequired) {
                 setMfaRequired(true);
                 setMfaSession(res.data.session || '');
@@ -43,7 +43,7 @@ export default function Login() {
         setError('');
         setLoading(true);
         try {
-            const res = await api.post(endpoints.auth.challenge, {
+            const res = await authApi.post(endpoints.auth.challenge, {
                 username,
                 session: mfaSession,
                 challengeName: mfaChallenge,

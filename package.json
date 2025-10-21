@@ -18,7 +18,12 @@
     "test-all": "node scripts/test-all.js",
     "quick-test": "node scripts/quick-test.js",
     "dev": "node scripts/start-web-dev.js",
-    "web": "cd web && npm start"
+    "web": "cd web && npm start",
+    "docker-build": "docker-compose up --build",
+    "docker-start": "docker-compose up -d",
+    "docker-stop": "docker-compose down",
+    "docker-logs": "docker-compose logs -f",
+    "docker-ps": "docker-compose ps"
   },
   "dependencies": {
     "@aws-sdk/client-secrets-manager": "^3.914.0",

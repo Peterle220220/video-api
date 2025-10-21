@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, endpoints } from '../services/api';
+import { authApi, transcodingApi, uploadApi, endpoints, staticPaths } from '../services/api';
 																	
 export default function Videos() {
 	const navigate = useNavigate();
@@ -54,7 +54,7 @@ export default function Videos() {
 				return;
 			}
 			setDescSaving((prev) => ({ ...prev, [videoId]: true }));
-			const { data } = await api.put(endpoints.videos.updateDescription(videoId), { description: text });
+			const { data } = await uploadApi.put(endpoints.videos.updateDescription(videoId), { description: text });
 			const meta = data?.meta || { description: text };
 			setAaiMetaByVideoId((prev) => ({ ...prev, [videoId]: { ...(prev[videoId] || {}), ...meta } }));
 			setDescDraftByVideoId((prev) => ({ ...prev, [videoId]: meta.description }));
@@ -81,13 +81,13 @@ export default function Videos() {
 
 	useEffect(() => {
 		// Probe auth quickly and load library
-		api.get(endpoints.auth.test).catch(() => {});
+		authApi.get(endpoints.auth.test).catch(() => {});
 		loadLibrary(1, libraryLimit);
 		userRef.current = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
 		// Load profile to get groups and compute Admin role
 		(async () => {
 			try {
-				const { data } = await api.get(endpoints.auth.profile);
+				const { data } = await authApi.get(endpoints.auth.profile);
 				const u = data?.user || {};
 				const groups = Array.isArray(u.groups) ? u.groups : [];
 				const isAdm = groups.some(g => String(g).toLowerCase() === 'admin');
@@ -110,7 +110,7 @@ export default function Videos() {
 
 	const loadLibrary = async (page = libraryPage, limit = libraryLimit) => {
 		try {
-			const { data } = await api.get(endpoints.transcoding.library, { params: { page, limit } });
+			const { data } = await transcodingApi.get(endpoints.transcoding.library, { params: { page, limit } });
 			const list = Array.isArray(data?.videos) ? data.videos : [];
 			setLibrary(list);
 			const p = data?.pagination || {};
@@ -157,13 +157,13 @@ export default function Videos() {
 		setLoading(true);
 		setError('');
 		try {
-			const { data } = await api.get(endpoints.transcoding.transcodedList(inputVideoId));
+			const { data } = await transcodingApi.get(endpoints.transcoding.transcodedList(inputVideoId));
 			const items = (data?.transcodedVideos || []).map((item) => {
 				const relPath = `${item.video_id}/${item.resolution}.mp4`;
 				return {
 					id: `${item.video_id}-${item.resolution}`,
 					title: `${item.resolution}`,
-					streamUrl: endpoints.staticPaths.processed(relPath),
+					streamUrl: staticPaths.processed(relPath),
 					fileSize: item.file_size,
 					resolution: item.resolution,
 					videoId: item.video_id,
@@ -173,7 +173,7 @@ export default function Videos() {
 			// prefetch metadata in background
 			items.forEach(async (it) => {
 				try {
-					const res = await api.get(endpoints.transcoding.metadata(it.videoId, it.resolution));
+					const res = await transcodingApi.get(endpoints.transcoding.metadata(it.videoId, it.resolution));
 					const m = res?.data || {};
 					setMetaByUrl((prev) => ({ ...prev, [it.streamUrl]: { sizeBytes: m.size, resolution: `${m.width}x${m.height}` || it.resolution, fps: m.fps, duration: m.duration, bitrate: m.bitrate } }));
 				} catch (_) {}
@@ -211,7 +211,7 @@ export default function Videos() {
 			const item = byRes.get(res);
 			if (item) {
 				const relPath = `${item.video_id}/${item.resolution}.mp4`;
-				statusObj[res] = { status: 'completed', url: endpoints.staticPaths.processed(relPath), progress: 100 };
+				statusObj[res] = { status: 'completed', url: staticPaths.processed(relPath), progress: 100 };
 			} else {
 				const prev = (resolutionStatuses || {})[res] || {};
 				statusObj[res] = { status: transcodeStatus === 'completed' ? 'pending' : 'processing', url: null, progress: typeof prev.progress === 'number' ? prev.progress : undefined };
@@ -232,7 +232,7 @@ export default function Videos() {
 				// Ensure we have a jobId; if not, fetch from /jobs using current videoId
 				if (!currentJobIdRef.current) {
 					try {
-						const { data } = await api.get(endpoints.transcoding.jobs);
+						const { data } = await transcodingApi.get(endpoints.transcoding.jobs);
 						const jobs = Array.isArray(data?.activeJobs) ? data.activeJobs : [];
 						const job = jobs.find(j => j.video_id === currentVideoIdRef.current);
 						if (job && job.job_id) {
@@ -246,7 +246,7 @@ export default function Videos() {
 					return; // wait for job discovery next tick
 				}
 
-				const { data: statusData } = await api.get(endpoints.transcoding.status(targetJobId));
+				const { data: statusData } = await transcodingApi.get(endpoints.transcoding.status(targetJobId));
 				const job = statusData?.job || {};
 				setTranscode1080Progress(Math.max(0, Math.min(100, Number(job.resolution_progress?.['1920x1080']?.progress) || 0)));
 				setTranscode720Progress(Math.max(0, Math.min(100, Number(job.resolution_progress?.['1280x720']?.progress) || 0)));
@@ -255,7 +255,7 @@ export default function Videos() {
 				setTranscodeStatus(job.status || 'processing');
 				// Update CPU metrics and elapsed time
 				try {
-					const { data: metrics } = await api.get(endpoints.transcoding.metrics);
+					const { data: metrics } = await transcodingApi.get(endpoints.transcoding.metrics);
 					const cpu = Number(metrics?.cpu?.current);
 					if (!Number.isNaN(cpu)) setCpuUsage(Math.max(0, Math.min(100, cpu))); 
 				} catch (_) {}
@@ -267,7 +267,7 @@ export default function Videos() {
 					pollingRef.current = null;
 					setTranscodeProgress(100);
 					setTranscodeStatus('completed');
-					api.get(endpoints.auth.test).catch(() => {});
+					authApi.get(endpoints.auth.test).catch(() => {});
 					loadLibrary();
 					fetchTranscodedList();
 					return;
@@ -293,7 +293,7 @@ export default function Videos() {
 				}
 
 				try {
-					const tl = await api.get(endpoints.transcoding.transcodedList(currentVideoIdRef.current));
+					const tl = await transcodingApi.get(endpoints.transcoding.transcodedList(currentVideoIdRef.current));
 					updateResolutionStatuses(Array.isArray(tl?.data?.transcodedVideos) ? tl.data.transcodedVideos : []);
 				} catch (_) {}
 			} catch (err) {
@@ -320,7 +320,7 @@ export default function Videos() {
 		setTranscodeStatus('idle');
     try {
         // 1) Request presigned URL to upload directly to S3
-        const presign = await api.post(endpoints.storage.presignUpload, {
+        const presign = await uploadApi.post(endpoints.storage.presignUpload, {
             filename: uploadFile.name,
             contentType: uploadFile.type || 'application/octet-stream',
         });
@@ -337,7 +337,7 @@ export default function Videos() {
         setUploadProgress(100);
 
         // 3) Start transcoding by S3 key
-        const res = await api.post(endpoints.transcoding.start, {
+        const res = await transcodingApi.post(endpoints.transcoding.start, {
             s3Key: s3Key,
             title: uploadFile.name,
             description: 'Uploaded via web UI',
@@ -377,7 +377,7 @@ export default function Videos() {
 				const videoId = m[1];
 				const resolution = m[2];
 				try {
-					const res = await api.get(endpoints.transcoding.metadata(videoId, resolution));
+					const res = await transcodingApi.get(endpoints.transcoding.metadata(videoId, resolution));
 					const md = res?.data || {};
 					setMetaByUrl((prev) => ({ ...prev, [url]: { sizeBytes: md.size, resolution: `${md.width}x${md.height}` || resolution, fps: md.fps, duration: md.duration, bitrate: md.bitrate } }));
 					return;
@@ -433,7 +433,7 @@ export default function Videos() {
 	// Helper: fetch meta either inline from backend or via presigned metaUrl
 	const fetchMetaForVideo = async (videoId) => {
 		try {
-			const res = await api.get(endpoints.transcoding.meta(videoId));
+			const res = await transcodingApi.get(endpoints.transcoding.meta(videoId));
 			const inlineMeta = res?.data?.meta;
 			if (inlineMeta) return inlineMeta;
 			const metaUrl = res?.data?.metaUrl || res?.data?.url;
@@ -524,7 +524,7 @@ export default function Videos() {
 									onClick={async () => {
 										if (!window.confirm('Delete this video and all transcoded files?')) return;
 										try {
-											await api.delete(endpoints.transcoding.deleteVideo(item.videoId));
+											await transcodingApi.delete(endpoints.transcoding.deleteVideo(item.videoId));
 											if (currentVideoIdRef.current === item.videoId) {
 												setVideos([]);
 												setSelectedPreview({ videoId: '', url: '' });

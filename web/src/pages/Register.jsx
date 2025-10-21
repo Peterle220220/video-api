@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, endpoints } from '../services/api';
+import { authApi, endpoints } from '../services/api';
 
 export default function Register() {
     const navigate = useNavigate();
@@ -25,7 +25,7 @@ export default function Register() {
                 setLoading(false);
                 return;
             }
-            const { data } = await api.post(endpoints.auth.register, { username, password, email });
+            const { data } = await authApi.post(endpoints.auth.register, { username, password, email });
             if (data?.success) {
                 setInfo('Sign up successful. Please check your email for the confirmation code.');
                 setStep('confirm');
@@ -45,7 +45,7 @@ export default function Register() {
         setInfo('');
         setLoading(true);
         try {
-            const { data } = await api.post(endpoints.auth.confirm, { username, code });
+            const { data } = await authApi.post(endpoints.auth.confirm, { username, code });
             if (data?.success) {
                 setInfo('Account confirmed. You can now log in.');
                 setTimeout(() => navigate('/login'), 800);

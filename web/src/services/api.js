@@ -11,7 +11,7 @@ const authServiceUrl = process.env.REACT_APP_AUTH_SERVICE_URL || `${protocol}//$
 const transcodingServiceUrl = process.env.REACT_APP_TRANSCODING_SERVICE_URL || `${protocol}//${hostname}:3002`;
 const uploadServiceUrl = process.env.REACT_APP_UPLOAD_SERVICE_URL || `${protocol}//${hostname}:3003`;
 
-// Main API client (for backward compatibility)
+// Main API client (deprecated - use service-specific APIs)
 export const api = axios.create({
     baseURL: apiBaseUrl,
 });
@@ -61,7 +61,6 @@ const addAuthInterceptor = (axiosInstance) => {
 };
 
 // Apply interceptors to all API clients
-addAuthInterceptor(api);
 addAuthInterceptor(authApi);
 addAuthInterceptor(transcodingApi);
 addAuthInterceptor(uploadApi);
@@ -97,5 +96,12 @@ export const endpoints = {
         updateDescription: (videoId) => `/api/videos/${videoId}/description`,
     },
 };
+
+// Static file paths for processed videos
+const staticPaths = {
+    processed: (relPath) => `${transcodingServiceUrl}/static/processed/${relPath}`,
+};
+
+export { staticPaths };
 
 
