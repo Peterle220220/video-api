@@ -49,8 +49,8 @@ services:
   # Transcoding Service
   transcoding:
     build:
-      context: ./transcoding-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./transcoding-service/Dockerfile
     ports:
       - "3002:3002"
     environment:
@@ -64,6 +64,8 @@ services:
       - AUTH_SERVICE_URL=http://auth:3001
       - UPLOAD_SERVICE_URL=http://upload:3003
       - SQS_TRANSCODING_QUEUE_URL=${SQS_TRANSCODING_QUEUE_URL}
+    volumes:
+      - ./shared:/app/shared:ro
     networks:
       - microservices-network
     healthcheck:
@@ -85,8 +87,8 @@ services:
   # Upload Service
   upload:
     build:
-      context: ./upload-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./upload-service/Dockerfile
     ports:
       - "3003:3003"
     environment:
@@ -103,6 +105,8 @@ services:
       - TRANSCODING_SERVICE_URL=http://transcoding:3002
       - SQS_UPLOAD_QUEUE_URL=${SQS_UPLOAD_QUEUE_URL}
       - SQS_STORAGE_QUEUE_URL=${SQS_STORAGE_QUEUE_URL}
+    volumes:
+      - ./shared:/app/shared:ro
     networks:
       - microservices-network
     healthcheck:

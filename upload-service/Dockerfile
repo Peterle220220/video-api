@@ -2,14 +2,18 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json package-lock.json ./
+# Copy package files from upload-service
+COPY ./upload-service/package.json ./
+COPY ./upload-service/package-lock.json ./
 
 # Install dependencies
 RUN npm ci --only=production
 
 # Copy source code
-COPY . .
+COPY ./upload-service/src ./src
+
+# Copy shared middleware
+COPY ./shared ./shared
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

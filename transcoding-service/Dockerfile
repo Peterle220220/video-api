@@ -5,14 +5,18 @@ RUN apk add --no-cache ffmpeg
 
 WORKDIR /app
 
-# Copy package files
-COPY package.json ./
+# Copy package files from transcoding-service
+COPY ./transcoding-service/package.json ./
+COPY ./transcoding-service/package-lock.json ./
 
 # Install dependencies
 RUN npm install --only=production
 
 # Copy source code
-COPY . .
+COPY ./transcoding-service/src ./src
+
+# Copy shared middleware
+COPY ./shared ./shared
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

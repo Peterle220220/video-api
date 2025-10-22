@@ -1,6 +1,6 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken } = require('../../shared/middleware/auth');
 const { presignUpload, presignDownload, buildMetaKey, uploadBuffer } = require('../services/s3Service');
 const assemblyAI = require('../services/assemblyAIService');
 const UploadQueueService = require('../services/uploadQueue');
