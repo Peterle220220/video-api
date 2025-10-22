@@ -1,4 +1,4 @@
-const SQSService = require('../../../shared/services/sqsService');
+const SQSService = require('../../shared/services/sqsService');
 const assemblyAI = require('./assemblyAIService');
 const { updateVideoDescription } = require('./dynamoService');
 
