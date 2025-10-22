@@ -1,4 +1,4 @@
-const { serviceCommunication } = require('./apiClient');
+const { serviceCommunication } = require('../services/apiClient');
 
 // Middleware to authenticate requests using Auth service
 const authenticateToken = async (req, res, next) => {
