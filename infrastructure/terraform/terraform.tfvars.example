@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------------------------------------------------------------
+# TERRAFORM VARIABLES EXAMPLE
+#
+# HOW TO USE:
+# 1. Copy this file to a new file named `terraform.tfvars`.
+# 2. Replace the placeholder values with your actual values.
+# 3. The `terraform.tfvars` file is ignored by .gitignore, so your secrets won't be committed.
+# ---------------------------------------------------------------------------------------------------------------------
+
+# --- General Configuration ---
+
+qut_username = "n12122882@qut.edu.au"
+
+# --- Networking Configuration ---
+
+# The full domain name you have set up in Route 53.
+domain_name = "n12122882.cab432.com"
+
+# The Route 53 hosted zone name. For this course, it's likely "cab432.com".
+hosted_zone_name = "cab432.com"
+
+# The ARN of the ACM SSL certificate you created for your domain.
+# You can find this in the AWS Certificate Manager console.
+# It should be in the same region you are deploying to (ap-southeast-2).
+# Example: "arn:aws:acm:ap-southeast-2:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+acm_certificate_arn = "arn:aws:acm:ap-southeast-2:901444280953:certificate/c7ffeaea-2181-43b7-b68d-a8eb021aed77"
+
+
+# --- ECR Image URIs ---
+
+# IMPORTANT: You must first run `terraform apply` to create the ECR repositories.
+# Then, build and push your Docker images to these repositories.
+# Finally, fill in the correct URIs below and run `terraform apply` again.
+# The format is ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/REPO_NAME:TAG
+
+# Replace "ACCOUNT_ID" with your AWS account ID.
+image_uri_web         = "ACCOUNT_ID.dkr.ecr.ap-southeast-2.amazonaws.com/cab432-a3-web:latest"
+image_uri_api         = "ACCOUNT_ID.dkr.ecr.ap-southeast-2.amazonaws.com/cab432-a3-video-api:latest"
+image_uri_auth        = "ACCOUNT_ID.dkr.ecr.ap-southeast-2.amazonaws.com/cab432-a3-auth-service:latest"
+image_uri_sqs_worker  = "ACCOUNT_ID.dkr.ecr.ap-southeast-2.amazonaws.com/cab432-a3-sqs-worker:latest"
+
+# You can leave the following variables commented out to use their default values,
+# or uncomment and change them if needed.
+
+# region = "ap-southeast-2"
+# project_name = "cab432-a3"
+# ecs_task_cpu = 512
+# ecs_task_memory = 1024
