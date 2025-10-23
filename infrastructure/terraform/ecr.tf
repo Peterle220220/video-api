@@ -1,7 +1,6 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # ECR REPOSITORIES
-# Creates a separate ECR repository for each microservice. This allows for independent
-# versioning and deployment of each service's Docker image.
+# Creates a separate ECR repository for each microservice.
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_ecr_repository" "web" {
@@ -18,8 +17,8 @@ resource "aws_ecr_repository" "web" {
   }
 }
 
-resource "aws_ecr_repository" "video_api" {
-  name                 = "${var.project_name}-video-api"
+resource "aws_ecr_repository" "auth" {
+  name                 = "${var.project_name}-auth"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -32,8 +31,22 @@ resource "aws_ecr_repository" "video_api" {
   }
 }
 
-resource "aws_ecr_repository" "auth_service" {
-  name                 = "${var.project_name}-auth-service"
+resource "aws_ecr_repository" "transcoding" {
+  name                 = "${var.project_name}-transcoding"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    qut-username = var.qut_username
+    purpose      = "assessment"
+  }
+}
+
+resource "aws_ecr_repository" "upload" {
+  name                 = "${var.project_name}-upload"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {

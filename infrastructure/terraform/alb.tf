@@ -1,15 +1,14 @@
 # ---------------------------------------------------------------------------------------------------------------------
 # APPLICATION LOAD BALANCER (ALB)
-# This file defines the ALB, its listeners, and target groups. The ALB serves as the single
-# entry point for all HTTP/HTTPS traffic and routes requests to the appropriate microservice.
-# This satisfies the "HTTPS" core criterion and contributes to the "Communication mechanisms" additional criterion.
+# This file defines the ALB, its listeners, and target groups.
+# This satisfies the "HTTPS" core criterion and contributes to "Communication mechanisms".
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_lb" "main" {
-  name               = "${var.project_name}-alb"
+  name               = "${var.project_name}-${var.qut_username}-alb"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = [aws_security_group.app_sg.id]
+  security_groups    = [data.aws_security_group.existing.id]
   subnets            = data.aws_subnets.public.ids
 
   tags = {
@@ -20,12 +19,12 @@ resource "aws_lb" "main" {
 
 # ---------------------------------------------------------------------------------------------------------------------
 # TARGET GROUPS
-# Each publicly accessible service gets its own target group. ECS will register task IPs with these groups.
+# Each publicly accessible service gets its own target group.
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_lb_target_group" "web" {
   name        = "${var.project_name}-web-tg"
-  port        = 3000 # Assuming React app runs on port 3000
+  port        = 3000
   protocol    = "HTTP"
   vpc_id      = data.aws_vpc.default.id
   target_type = "ip"
@@ -41,15 +40,15 @@ resource "aws_lb_target_group" "web" {
   }
 }
 
-resource "aws_lb_target_group" "api" {
-  name        = "${var.project_name}-api-tg"
-  port        = 8080 # Port for the video-api service
+resource "aws_lb_target_group" "auth" {
+  name        = "${var.project_name}-auth-tg"
+  port        = 3001
   protocol    = "HTTP"
   vpc_id      = data.aws_vpc.default.id
   target_type = "ip"
 
   health_check {
-    path                = "/api/videos/health" # A dedicated health check endpoint is recommended
+    path                = "/api/auth/health"
     protocol            = "HTTP"
     matcher             = "200"
     interval            = 30
@@ -59,15 +58,33 @@ resource "aws_lb_target_group" "api" {
   }
 }
 
-resource "aws_lb_target_group" "auth" {
-  name        = "${var.project_name}-auth-tg"
-  port        = 8081 # Port for the auth-service
+resource "aws_lb_target_group" "transcoding" {
+  name        = "${var.project_name}-transcoding-tg"
+  port        = 3002
   protocol    = "HTTP"
   vpc_id      = data.aws_vpc.default.id
   target_type = "ip"
 
   health_check {
-    path                = "/api/auth/health" # A dedicated health check endpoint is recommended
+    path                = "/api/transcoding/health"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+}
+
+resource "aws_lb_target_group" "upload" {
+  name        = "${var.project_name}-upload-tg"
+  port        = 3003
+  protocol    = "HTTP"
+  vpc_id      = data.aws_vpc.default.id
+  target_type = "ip"
+
+  health_check {
+    path                = "/api/storage/health"
     protocol            = "HTTP"
     matcher             = "200"
     interval            = 30
@@ -112,27 +129,10 @@ resource "aws_lb_listener" "https" {
   }
 }
 
-# Rule to route /api/videos/* to the video-api service
-resource "aws_lb_listener_rule" "api_rule" {
-  listener_arn = aws_lb_listener.https.arn
-  priority     = 100
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.api.arn
-  }
-
-  condition {
-    path_pattern {
-      values = ["/api/videos*"]
-    }
-  }
-}
-
-# Rule to route /api/auth/* to the auth-service
+# Rule to route /api/auth/* to the auth service
 resource "aws_lb_listener_rule" "auth_rule" {
   listener_arn = aws_lb_listener.https.arn
-  priority     = 101
+  priority     = 100
 
   action {
     type             = "forward"
@@ -142,6 +142,40 @@ resource "aws_lb_listener_rule" "auth_rule" {
   condition {
     path_pattern {
       values = ["/api/auth*"]
+    }
+  }
+}
+
+# Rule to route /api/transcoding/* to the transcoding service
+resource "aws_lb_listener_rule" "transcoding_rule" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 101
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.transcoding.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/transcoding*"]
+    }
+  }
+}
+
+# Rule to route /api/storage/* and /api/videos/* to the upload service
+resource "aws_lb_listener_rule" "upload_rule" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 102
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.upload.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/storage*", "/api/videos*"]
     }
   }
 }

@@ -2,7 +2,6 @@
 # APPLICATION AUTO SCALING
 # This file configures auto-scaling for the CPU-intensive worker service.
 # This satisfies the "Auto scaling" core criterion.
-# It automatically adjusts the number of tasks based on CPU utilization.
 # ---------------------------------------------------------------------------------------------------------------------
 
 # Register the SQS worker service as a scalable target.
