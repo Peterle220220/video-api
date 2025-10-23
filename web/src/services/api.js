@@ -12,9 +12,9 @@ const transcodingServiceUrl = process.env.REACT_APP_TRANSCODING_SERVICE_URL || `
 const uploadServiceUrl = process.env.REACT_APP_UPLOAD_SERVICE_URL || `${protocol}//${hostname}:3003`;
 
 // Main API client (deprecated - use service-specific APIs)
-export const api = axios.create({
-    baseURL: apiBaseUrl,
-});
+// export const api = axios.create({
+//     baseURL: apiBaseUrl,
+// });
 
 // Service-specific API clients
 export const authApi = axios.create({

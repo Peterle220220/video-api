@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authApi, transcodingApi, uploadApi, endpoints, staticPaths } from '../services/api';
-
+import {  endpoints,transcodingApi,uploadApi,authApi } from '../services/api';
+																	
 export default function Videos() {
 	const navigate = useNavigate();
 	const [videos, setVideos] = useState([]);
@@ -81,7 +81,7 @@ export default function Videos() {
 
 	useEffect(() => {
 		// Probe auth quickly and load library
-		authApi.get(endpoints.auth.test).catch(() => { });
+		authApi.get(endpoints.auth.test).catch(() => {});
 		loadLibrary(1, libraryLimit);
 		userRef.current = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
 		// Load profile to get groups and compute Admin role
@@ -163,7 +163,7 @@ export default function Videos() {
 				return {
 					id: `${item.video_id}-${item.resolution}`,
 					title: `${item.resolution}`,
-					streamUrl: staticPaths.processed(relPath),
+					streamUrl: endpoints.staticPaths.processed(relPath),
 					fileSize: item.file_size,
 					resolution: item.resolution,
 					videoId: item.video_id,
@@ -176,7 +176,7 @@ export default function Videos() {
 					const res = await transcodingApi.get(endpoints.transcoding.metadata(it.videoId, it.resolution));
 					const m = res?.data || {};
 					setMetaByUrl((prev) => ({ ...prev, [it.streamUrl]: { sizeBytes: m.size, resolution: `${m.width}x${m.height}` || it.resolution, fps: m.fps, duration: m.duration, bitrate: m.bitrate } }));
-				} catch (_) { }
+				} catch (_) {}
 			});
 		} catch (err) {
 			if (err?.response?.status === 401 || err?.response?.status === 403) {
@@ -211,7 +211,7 @@ export default function Videos() {
 			const item = byRes.get(res);
 			if (item) {
 				const relPath = `${item.video_id}/${item.resolution}.mp4`;
-				statusObj[res] = { status: 'completed', url: staticPaths.processed(relPath), progress: 100 };
+				statusObj[res] = { status: 'completed', url: endpoints.staticPaths.processed(relPath), progress: 100 };
 			} else {
 				const prev = (resolutionStatuses || {})[res] || {};
 				statusObj[res] = { status: transcodeStatus === 'completed' ? 'pending' : 'processing', url: null, progress: typeof prev.progress === 'number' ? prev.progress : undefined };
@@ -238,7 +238,7 @@ export default function Videos() {
 						if (job && job.job_id) {
 							currentJobIdRef.current = job.job_id;
 						}
-					} catch (_) { }
+					} catch (_) {}
 				}
 
 				const targetJobId = currentJobIdRef.current;
@@ -248,42 +248,17 @@ export default function Videos() {
 
 				const { data: statusData } = await transcodingApi.get(endpoints.transcoding.status(targetJobId));
 				const job = statusData?.job || {};
-				
-				// Debug logging
-				console.log('📊 Job status data:', {
-					jobId: targetJobId,
-					status: job.status,
-					progress: job.progress,
-					resolutionProgress: job.resolution_progress
-				});
-				
-				// Update individual resolution progress from job data
-				const jobResolutionProgress = job?.resolution_progress || {};
-				const progress1080 = Math.max(0, Math.min(100, Number(jobResolutionProgress['1920x1080']?.progress) || 0));
-				const progress720 = Math.max(0, Math.min(100, Number(jobResolutionProgress['1280x720']?.progress) || 0));
-				const progress480 = Math.max(0, Math.min(100, Number(jobResolutionProgress['854x480']?.progress) || 0));
-				
-				setTranscode1080Progress(progress1080);
-				setTranscode720Progress(progress720);
-				setTranscode480Progress(progress480);
-				
-				// Update overall progress
-				setTranscodeProgress(Math.max(0, Math.min(100, Number(job.progress) || 0)));
+				setTranscode1080Progress(Math.max(0, Math.min(100, Number(job.resolution_progress?.['1920x1080']?.progress) || 0)));
+				setTranscode720Progress(Math.max(0, Math.min(100, Number(job.resolution_progress?.['1280x720']?.progress) || 0)));
+				setTranscode480Progress(Math.max(0, Math.min(100, Number(job.resolution_progress?.['854x480']?.progress) || 0)));
+				// setTranscodeProgress(Math.max(0, Math.min(100, Number(job.progress) || 0)));
 				setTranscodeStatus(job.status || 'processing');
-				
-				// Debug logging for progress
-				console.log('📈 Progress updates:', {
-					'1080p': progress1080,
-					'720p': progress720,
-					'480p': progress480,
-					overall: job.progress
-				});
 				// Update CPU metrics and elapsed time
 				try {
 					const { data: metrics } = await transcodingApi.get(endpoints.transcoding.metrics);
 					const cpu = Number(metrics?.cpu?.current);
-					if (!Number.isNaN(cpu)) setCpuUsage(Math.max(0, Math.min(100, cpu)));
-				} catch (_) { }
+					if (!Number.isNaN(cpu)) setCpuUsage(Math.max(0, Math.min(100, cpu))); 
+				} catch (_) {}
 				if (transcodeStartTsRef.current) {
 					setTranscodeElapsedSec(Math.max(0, Math.floor((Date.now() - transcodeStartTsRef.current) / 1000)));
 				}
@@ -292,14 +267,14 @@ export default function Videos() {
 					pollingRef.current = null;
 					setTranscodeProgress(100);
 					setTranscodeStatus('completed');
-					authApi.get(endpoints.auth.test).catch(() => { });
+					authApi.get(endpoints.auth.test).catch(() => {});
 					loadLibrary();
 					fetchTranscodedList();
 					return;
 				}
 
 				const jobResolutions = Array.isArray(job?.resolutions) ? job.resolutions : [];
-				const jobResProgress = job?.resolution_progress || {};
+				const resolutionProgress = job?.resolution_progress || {};
 				if (jobResolutions.length > 0) {
 					// Sync expected resolutions order with backend
 					setExpectedResolutions(jobResolutions.map(r => String(r)));
@@ -307,7 +282,7 @@ export default function Videos() {
 						const next = { ...prev };
 						jobResolutions.forEach((res) => {
 							const key = String(res);
-							const info = jobResProgress[key] || {};
+							const info = resolutionProgress[key] || {};
 							const progress = Math.max(0, Math.min(100, Number(info.progress) || 0));
 							const status = progress >= 100 ? 'completed' : (info.status || 'processing');
 							const url = next[key]?.url || null;
@@ -320,7 +295,7 @@ export default function Videos() {
 				try {
 					const tl = await transcodingApi.get(endpoints.transcoding.transcodedList(currentVideoIdRef.current));
 					updateResolutionStatuses(Array.isArray(tl?.data?.transcodedVideos) ? tl.data.transcodedVideos : []);
-				} catch (_) { }
+				} catch (_) {}
 			} catch (err) {
 				const status = err?.response?.status;
 				if (status === 404) {
@@ -343,33 +318,33 @@ export default function Videos() {
 		setUploadProgress(0);
 		setTranscodeProgress(0);
 		setTranscodeStatus('idle');
-		try {
-			// 1) Request presigned URL to upload directly to S3
-			const presign = await uploadApi.post(endpoints.storage.presignUpload, {
-				filename: uploadFile.name,
-				contentType: uploadFile.type || 'application/octet-stream',
-			});
-			const s3Key = presign?.data?.key;
-			const uploadUrl = presign?.data?.uploadUrl;
-			if (!s3Key || !uploadUrl) throw new Error('Failed to get presigned URL');
+    try {
+        // 1) Request presigned URL to upload directly to S3
+        const presign = await uploadApi.post(endpoints.storage.presignUpload, {
+            filename: uploadFile.name,
+            contentType: uploadFile.type || 'application/octet-stream',
+        });
+        const s3Key = presign?.data?.key;
+        const uploadUrl = presign?.data?.uploadUrl;
+        if (!s3Key || !uploadUrl) throw new Error('Failed to get presigned URL');
 
-			// 2) Upload file to S3 via PUT
-			await fetch(uploadUrl, {
-				method: 'PUT',
-				headers: { 'Content-Type': uploadFile.type || 'application/octet-stream' },
-				body: uploadFile,
-			});
-			setUploadProgress(100);
+        // 2) Upload file to S3 via PUT
+        await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': uploadFile.type || 'application/octet-stream' },
+            body: uploadFile,
+        });
+        setUploadProgress(100);
 
-			// 3) Start transcoding by S3 key
-			const res = await transcodingApi.post(endpoints.transcoding.start, {
-				s3Key: s3Key,
-				title: uploadFile.name,
-				description: 'Uploaded via web UI',
-				resolutions: JSON.stringify(expectedResolutions),
-			});
-			const videoId = res?.data?.videoId;
-			const initialUrls = Array.isArray(res?.data?.urls) ? res.data.urls : [];
+        // 3) Start transcoding by S3 key
+        const res = await transcodingApi.post(endpoints.transcoding.start, {
+            s3Key: s3Key,
+            title: uploadFile.name,
+            description: 'Uploaded via web UI',
+            resolutions: JSON.stringify(expectedResolutions),
+        });
+        const videoId = res?.data?.videoId;
+        const initialUrls = Array.isArray(res?.data?.urls) ? res.data.urls : [];
 			if (videoId) {
 				currentVideoIdRef.current = videoId;
 				currentJobIdRef.current = '';
@@ -406,7 +381,7 @@ export default function Videos() {
 					const md = res?.data || {};
 					setMetaByUrl((prev) => ({ ...prev, [url]: { sizeBytes: md.size, resolution: `${md.width}x${md.height}` || resolution, fps: md.fps, duration: md.duration, bitrate: md.bitrate } }));
 					return;
-				} catch (_) { }
+				} catch (_) {}
 			}
 			// Fallback: HEAD for size only
 			const res = await fetch(url, { method: 'HEAD' });
@@ -464,15 +439,11 @@ export default function Videos() {
 			const metaUrl = res?.data?.metaUrl || res?.data?.url;
 			if (metaUrl) {
 				const r = await fetch(metaUrl);
-				if (!r.ok) {
-					console.log(`Metadata not ready for video ${videoId}: ${r.status} ${r.statusText}`);
-					return null;
-				}
+				if (!r.ok) throw new Error('Failed to fetch meta from presigned URL');
 				return await r.json();
 			}
 			return null;
-		} catch (error) {
-			console.log(`Failed to fetch metadata for video ${videoId}:`, error.message);
+		} catch (_) {
 			return null;
 		}
 	};
@@ -539,78 +510,76 @@ export default function Videos() {
 							</div>
 						</div>
 						{library.map(item => (
-							<div key={item.videoId} style={{ display: 'grid', gap: 6 }}>
-								<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
-									<strong title={item.title} style={{ minWidth: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflowWrap: 'anywhere' }}>{item.title}</strong>
+						<div key={item.videoId} style={{ display: 'grid', gap: 6 }}>
+							<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+								<strong title={item.title} style={{ minWidth: 0, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflowWrap: 'anywhere' }}>{item.title}</strong>
 									{item.urls.map(u => (
 										<button key={u.url} onClick={() => onPreviewClick(item.videoId, u.url)}>
 											Preview {u.resolution}
 										</button>
 									))}
-									{isAdmin && item.urls.length !== 0 && (
-										<button
-											style={{ marginLeft: 'auto', background: '#ef4444', color: 'white' }}
-											onClick={async () => {
-												if (!window.confirm('Delete this video and all transcoded files?')) return;
-												try {
-													await transcodingApi.delete(endpoints.transcoding.deleteVideo(item.videoId));
-													if (currentVideoIdRef.current === item.videoId) {
-														setVideos([]);
-														setSelectedPreview({ videoId: '', url: '' });
-														setAaiMetaByVideoId((prev) => { const next = { ...prev }; delete next[item.videoId]; return next; });
-														setDescDraftByVideoId((prev) => { const next = { ...prev }; delete next[item.videoId]; return next; });
-													}
-												} catch (err) {
-													alert(err?.response?.data?.error || 'Failed to delete video');
-												} finally {
-													await loadLibrary();
-												}
-											}}
-										>
-											Delete
-										</button>
-									)}
+							{isAdmin && item.urls.length !== 0 && (
+								<button
+									style={{ marginLeft: 'auto', background: '#ef4444', color: 'white' }}
+									onClick={async () => {
+										if (!window.confirm('Delete this video and all transcoded files?')) return;
+										try {
+											await transcodingApi.delete(endpoints.transcoding.deleteVideo(item.videoId));
+											if (currentVideoIdRef.current === item.videoId) {
+												setVideos([]);
+												setSelectedPreview({ videoId: '', url: '' });
+												setAaiMetaByVideoId((prev) => { const next = { ...prev }; delete next[item.videoId]; return next; });
+												setDescDraftByVideoId((prev) => { const next = { ...prev }; delete next[item.videoId]; return next; });
+											}
+										} catch (err) {
+											alert(err?.response?.data?.error || 'Failed to delete video');
+										} finally {
+											await loadLibrary();
+										}
+									}}
+								>
+									Delete
+								</button>
+							)}
 								</div>
 								{aaiMetaByVideoId[item.videoId] && (
 									<div style={{ fontSize: 12, color: '#374151', background: '#f8fafc', padding: 8, borderRadius: 6 }}>
-										{(() => {
-											const m = aaiMetaByVideoId[item.videoId] || {}; const st = String(m.status || '').toLowerCase(); return (
-												<div style={{ display: 'grid', gap: 6 }}>
-													<div>
-														<strong>Summary status:</strong> {st || 'unknown'}{st && st !== 'completed' && st !== 'error' ? ' (processing...)' : ''}
-													</div>
-													{m.summary && (
-														<div><strong>Summary:</strong> {m.summary}</div>
-													)}
-													{Array.isArray(m.chapters) && m.chapters.length > 0 && (
-														<div>
-															<strong>Chapters:</strong>
-															<ul style={{ margin: '4px 0 0 16px' }}>
-																{m.chapters.slice(0, 6).map((c, idx) => (
-																	<li key={idx}>{c?.headline || c?.gist || `Chapter ${idx + 1}`} {Number.isFinite(c?.start) && Number.isFinite(c?.end) ? `(${formatSeconds(c.start)} - ${formatSeconds(c.end)})` : ''}</li>
-																))}
-															</ul>
-														</div>
-													)}
-													{m.highlights && Array.isArray(m.highlights.results) && m.highlights.results.length > 0 && (
-														<div>
-															<strong>Highlights:</strong>
-															<ul style={{ margin: '4px 0 0 16px' }}>
-																{m.highlights.results.slice(0, 5).map((h, idx) => (
-																	<li key={idx}>{h.text} {h.rank ? `(rank ${h.rank})` : ''}</li>
-																))}
-															</ul>
-														</div>
-													)}
-													{m.text && (
-														<details>
-															<summary>Transcript</summary>
-															<div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{m.text}</div>
-														</details>
-													)}
+										{(() => { const m = aaiMetaByVideoId[item.videoId] || {}; const st = String(m.status || '').toLowerCase(); return (
+											<div style={{ display: 'grid', gap: 6 }}>
+												<div>
+													<strong>Summary status:</strong> {st || 'unknown'}{st && st !== 'completed' && st !== 'error' ? ' (processing...)' : ''}
 												</div>
-											);
-										})()}
+												{m.summary && (
+													<div><strong>Summary:</strong> {m.summary}</div>
+												)}
+												{Array.isArray(m.chapters) && m.chapters.length > 0 && (
+													<div>
+														<strong>Chapters:</strong>
+														<ul style={{ margin: '4px 0 0 16px' }}>
+															{m.chapters.slice(0, 6).map((c, idx) => (
+																<li key={idx}>{c?.headline || c?.gist || `Chapter ${idx+1}`} {Number.isFinite(c?.start) && Number.isFinite(c?.end) ? `(${formatSeconds(c.start)} - ${formatSeconds(c.end)})` : ''}</li>
+															))}
+														</ul>
+													</div>
+												)}
+												{m.highlights && Array.isArray(m.highlights.results) && m.highlights.results.length > 0 && (
+													<div>
+														<strong>Highlights:</strong>
+														<ul style={{ margin: '4px 0 0 16px' }}>
+															{m.highlights.results.slice(0, 5).map((h, idx) => (
+																<li key={idx}>{h.text} {h.rank ? `(rank ${h.rank})` : ''}</li>
+															))}
+														</ul>
+													</div>
+												)}
+												{m.text && (
+													<details>
+														<summary>Transcript</summary>
+														<div style={{ whiteSpace: 'pre-wrap', marginTop: 4 }}>{m.text}</div>
+													</details>
+												)}
+											</div>
+										); })()}
 									</div>
 								)}
 								{selectedPreview.videoId === item.videoId && selectedPreview.url && (
@@ -620,11 +589,9 @@ export default function Videos() {
 											Your browser does not support the video tag.
 										</video>
 										<div style={{ fontSize: 12, color: '#374151' }}>
-											{(() => {
-												const meta = metaByUrl[selectedPreview.url] || {}; return (
-													<span>Size: {formatBytes(meta.sizeBytes)} — Resolution: {meta.resolution || parseResolutionFromUrl(selectedPreview.url)} {meta.fps ? `— FPS: ${meta.fps}` : meta.duration ? `— Duration: ${formatSeconds(meta.duration)}` : ''} {meta.bitrate ? `— Bitrate: ${(meta.bitrate / 1000).toFixed(0)} kbps` : ''}</span>
-												);
-											})()}
+											{(() => { const meta = metaByUrl[selectedPreview.url] || {}; return (
+												<span>Size: {formatBytes(meta.sizeBytes)} — Resolution: {meta.resolution || parseResolutionFromUrl(selectedPreview.url)} {meta.fps ? `— FPS: ${meta.fps}` : meta.duration ? `— Duration: ${formatSeconds(meta.duration)}` : ''} {meta.bitrate ? `— Bitrate: ${(meta.bitrate/1000).toFixed(0)} kbps` : ''}</span>
+											); })()}
 										</div>
 									</>
 								)}
@@ -646,37 +613,12 @@ export default function Videos() {
 						{expectedResolutions.map((res) => {
 							const info = resolutionStatuses[res] || { status: 'processing', url: null };
 							const label = formatResolutionLabel(res);
-							
-							// Get progress from individual state variables (updated from job data)
-							let percent = 0;
-							let status = 'processing';
-							
-							if (res === '1920x1080') {
-								percent = transcode1080Progress;
-								status = percent >= 100 ? 'completed' : 'processing';
-							} else if (res === '1280x720') {
-								percent = transcode720Progress;
-								status = percent >= 100 ? 'completed' : 'processing';
-							} else if (res === '854x480') {
-								percent = transcode480Progress;
-								status = percent >= 100 ? 'completed' : 'processing';
-							}
-							
-							// Fallback to resolutionStatuses if individual progress is 0
-							if (percent === 0 && info.progress !== undefined) {
-								percent = info.progress;
-								status = info.status || 'processing';
-							}
-							
+							const percent = res === '1920x1080' ? transcode1080Progress : res === '1280x720' ? transcode720Progress : res === '854x480' ? transcode480Progress : 0;
+							const computedStatus = percent >= 100 ? 'completed' : 'processing';
 							return (
 								<div key={res} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-									<span style={{ 
-										width: 10, 
-										height: 10, 
-										borderRadius: '50%', 
-										background: status === 'completed' ? '#16a34a' : status === 'failed' ? '#ef4444' : '#f59e0b' 
-									}} />
-									<span>{label}: {status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : `${Math.max(0, Math.min(100, percent))}%`}</span>
+									<span style={{ width: 10, height: 10, borderRadius: '50%', background: computedStatus === 'completed' ? '#16a34a' : '#f59e0b' }} />
+									<span>{label}: {computedStatus === 'completed' ? 'completed' : `${Math.max(0, Math.min(100, percent))}%`}</span>
 									{/* {info.url && <a href={info.url} target="_blank" rel="noreferrer">Open</a>} */}
 								</div>
 							);
@@ -684,7 +626,7 @@ export default function Videos() {
 					</div>
 				</div>
 			)}
-
+			
 		</div>
 	);
 }

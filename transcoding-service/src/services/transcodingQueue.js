@@ -14,6 +14,7 @@ class TranscodingQueueService {
             const message = {
                 type: 'transcoding_job',
                 videoId: jobData.videoId,
+                jobId: jobData.jobId,
                 inputSource: jobData.inputSource,
                 resolutions: jobData.resolutions,
                 timestamp: new Date().toISOString(),
@@ -44,12 +45,12 @@ class TranscodingQueueService {
     // Process transcoding jobs from queue
     async processTranscodingJob(messageBody, message) {
         try {
-            const { videoId, inputSource, resolutions, retryCount = 0 } = messageBody;
+            const { videoId, jobId, inputSource, resolutions, retryCount = 0 } = messageBody;
             
-            console.log(`🎬 Processing transcoding job for video ${videoId}`);
+            console.log(`🎬 Processing transcoding job for video ${videoId}, job ${jobId}`);
             
             // Update job status to processing
-            await updateJob(videoId, {
+            await updateJob(jobId, {
                 status: 'processing',
                 started_at: new Date().toISOString(),
                 retry_count: retryCount
@@ -59,7 +60,7 @@ class TranscodingQueueService {
             const result = await transcodingService.transcodeVideo(videoId, inputSource, resolutions);
             
             // Update job status to completed
-            await updateJob(videoId, {
+            await updateJob(jobId, {
                 status: 'completed',
                 completed_at: new Date().toISOString(),
                 result: result
@@ -85,7 +86,7 @@ class TranscodingQueueService {
                 });
             } else {
                 // Mark job as failed
-                await updateJob(messageBody.videoId, {
+                await updateJob(messageBody.jobId, {
                     status: 'failed',
                     error: error.message,
                     failed_at: new Date().toISOString()

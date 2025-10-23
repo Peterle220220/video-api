@@ -1,8 +1,9 @@
 const { DynamoDBDocumentClient, PutCommand, GetCommand, UpdateCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 const { dynamoDocClient, QUT_USERNAME, DDB_TABLE } = require('../config/aws');
-// const { withCache, cacheDel } = // require('../cache/memcached') // Disabled; // Disabled for now
 
-const docClient = dynamoDocClient;
+const docClient = DynamoDBDocumentClient.from(dynamoDocClient, {
+    marshallOptions: { removeUndefinedValues: true, convertEmptyValues: false },
+});
 
 // Helpers for single-table design
 function makeVideoKey(videoId) {
@@ -18,13 +19,13 @@ async function putVideo(item) {
         'qut-username': QUT_USERNAME,
         sk: makeVideoKey(item.video_id)
     });
-    await docClient.send(new PutCommand({ TableName: process.env.DYNAMODB_TABLE_NAME || 'cab432-a2-n12122882-metadata', Item: record }));
+    await docClient.send(new PutCommand({ TableName: DDB_TABLE, Item: record }));
 }
 
 async function getVideo(videoId) {
     const res = await docClient.send(new GetCommand({
         TableName: DDB_TABLE,
-        Key: { 'qut-username': process.env.QUT_USERNAME || 'n12122882@qut.edu.au', sk: makeVideoKey(videoId) }
+        Key: { 'qut-username': QUT_USERNAME, sk: makeVideoKey(videoId) }
     }));
     return res.Item || null;
 }
@@ -72,15 +73,16 @@ async function putJob(item) {
         'qut-username': QUT_USERNAME,
         sk: makeJobKey(videoId, jobId)
     });
-    await docClient.send(new PutCommand({ TableName: process.env.DYNAMODB_TABLE_NAME || 'cab432-a2-n12122882-metadata', Item: record }));
-    // Cache disabled - no action needed
+    await docClient.send(new PutCommand({ TableName: DDB_TABLE, Item: record }));
+    // Invalidate potentially affected caches
+    try {
+        await cacheDel(`job:${QUT_USERNAME}:${jobId}`);
+        await cacheDel(`jobs:active:${QUT_USERNAME}`);
+    } catch (_) {}
 }
 
 // Note: We don't know videoId from jobId alone; query by PK and filter by job_id
 async function getJob(jobId) {
-    const cacheKey = `job:${QUT_USERNAME}:${jobId}`;
-    // Cache disabled - direct call
-    // Query by PK and sort key prefix in KeyCondition; filter by job_id
     const res = await docClient.send(new QueryCommand({
         TableName: DDB_TABLE,
         KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',
@@ -145,8 +147,6 @@ async function deleteJob(jobId) {
 
 // List jobs currently in-flight (status = processing or pending)
 async function listActiveJobs() {
-    const cacheKey = `jobs:active:${QUT_USERNAME}`;
-    // Cache disabled - direct call
     const res = await docClient.send(new QueryCommand({
         TableName: DDB_TABLE,
         KeyConditionExpression: '#pk = :u AND begins_with(#sk, :jobPrefix)',

@@ -2,22 +2,17 @@ const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const transcodingService = require('../services/transcodingService');
-const TranscodingQueueService = require('../services/transcodingQueue');
 const { getCurrentCPUUsage, getCPUUsageHistory, getSystemInfo, getMemoryUsage } = require('../utils/cpuMonitor');
-// const { authenticateToken } = require('../../shared/middleware/auth');
 const { authenticateToken } = require('../middleware/auth');
+// const assemblyAI = require('../services/external/assemblyAIService');
 const { listPrefix, presignDownload, buildProcessedKey, buildMetaKey, deletePrefix, headObject, getObjectJson, deleteObject } = require('../services/s3Service');
 const { putVideo, getJob, queryJobsByVideoId, updateJob, listVideos } = require('../services/dynamoService');
 const { listActiveJobs } = require('../services/dynamoService');
-
-// Initialize queue service
-const transcodingQueue = new TranscodingQueueService();
-
 // Helper function to create initial meta file
 async function createInitialMetaFile(videoId) {
     try {
         const { PutObjectCommand } = require('@aws-sdk/client-s3');
-        const { s3Client } = require('../config/aws');
+        const { s3Client, S3_BUCKET } = require('../config/aws');
         
         const metaKey = buildMetaKey(videoId);
         const initialMeta = {
@@ -32,7 +27,7 @@ async function createInitialMetaFile(videoId) {
         };
 
         const command = new PutObjectCommand({
-            Bucket: process.env.S3_BUCKET_NAME || 'cab432-a2-n12122882',
+            Bucket: S3_BUCKET,
             Key: metaKey,
             Body: JSON.stringify(initialMeta, null, 2),
             ContentType: 'application/json'
@@ -88,12 +83,28 @@ router.post('/start', authenticateToken, async (req, res) => {
             console.warn('putVideo failed (continuing):', e?.message || e);
         }
 
-        // Queue transcoding job instead of direct processing
-        await transcodingQueue.queueTranscodingJob({
-            videoId,
-            inputSource,
-            resolutions: resolutionList
-        });
+        // Start transcoding in background (it will handle S3/local inputs)
+        transcodingService.transcodeVideo(videoId, inputSource, resolutionList)
+            .then(result => {
+                console.log(`✅ Transcoding completed for video ${videoId}:`, result);
+            })
+            .catch(error => {
+                console.error(`❌ Transcoding failed for video ${videoId}:`, error);
+            });
+
+        // Start background AssemblyAI processing for transcript/summary (best-effort)
+        try {
+            // Call upload service to queue AssemblyAI processing
+            const uploadClient = require('../services/external/apiClient');
+            uploadClient.post('/api/storage/process-assemblyai', {
+                videoId,
+                s3Key: inputSource.key
+            }).then(response => {
+                console.log(`📝 AssemblyAI processing queued for video ${videoId}`);
+            }).catch(err => {
+                console.warn(`Failed to queue AssemblyAI processing for video ${videoId}:`, err?.message || err);
+            });
+        } catch (_) { /* ignore fire-and-forget errors */ }
 
         // Return presigned URLs for expected outputs
         const urls = await Promise.all(resolutionList.map(async (r) => {
@@ -104,11 +115,11 @@ router.post('/start', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Transcoding job queued',
+            message: 'Transcoding job started',
             videoId: videoId,
             filename: filename,
             resolutions: resolutionList,
-            status: 'queued',
+            status: 'processing',
             urls
         });
 
@@ -382,6 +393,8 @@ router.post('/test-cpu', authenticateToken, async (req, res) => {
     }
 });
 
+module.exports = router;
+
 // List transcoded videos library (from DynamoDB videos + presigned S3 URLs)
 router.get('/library', authenticateToken, async (req, res) => {
     try {
@@ -488,46 +501,3 @@ router.get('/videos/:videoId/meta', authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Failed to read metadata' });
     }
 });
-
-// Queue management endpoints
-router.post('/queue/start', authenticateToken, async (req, res) => {
-    try {
-        transcodingQueue.startProcessing();
-        res.json({
-            success: true,
-            message: 'Transcoding queue processing started'
-        });
-    } catch (error) {
-        console.error('Error starting queue processing:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-router.post('/queue/stop', authenticateToken, async (req, res) => {
-    try {
-        transcodingQueue.stopProcessing();
-        res.json({
-            success: true,
-            message: 'Transcoding queue processing stopped'
-        });
-    } catch (error) {
-        console.error('Error stopping queue processing:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-router.get('/queue/status', authenticateToken, async (req, res) => {
-    try {
-        const status = await transcodingQueue.getQueueStatus();
-        res.json({
-            success: true,
-            queueStatus: status,
-            isProcessing: transcodingQueue.isProcessing
-        });
-    } catch (error) {
-        console.error('Error getting queue status:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-module.exports = router;
