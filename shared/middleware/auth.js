@@ -11,14 +11,18 @@ const authenticateToken = async (req, res, next) => {
         }
 
         // Verify token with Auth service
-        const userData = await serviceCommunication.auth.verifyToken(token);
-        
-        if (!userData.success) {
+        const response = await serviceCommunication.auth.verifyToken(token);
+
+        if (!response || !response.success) {
+            // Check if it's a token expired error
+            if (response && response.error === 'Token expired') {
+                return res.status(401).json({ error: 'Token expired' });
+            }
             return res.status(401).json({ error: 'Invalid token' });
         }
 
         // Add user data to request
-        req.user = userData.user;
+        req.user = response.user;
         next();
     } catch (error) {
         console.error('Authentication error:', error);
@@ -33,9 +37,9 @@ const optionalAuth = async (req, res, next) => {
         const token = authHeader && authHeader.split(' ')[1];
 
         if (token) {
-            const userData = await serviceCommunication.auth.verifyToken(token);
-            if (userData.success) {
-                req.user = userData.user;
+            const response = await serviceCommunication.auth.verifyToken(token);
+            if (response && response.success) {
+                req.user = response.user;
             }
         }
         

@@ -32,11 +32,11 @@ services:
       - NODE_ENV=production
       - PORT=3001
       - AWS_REGION=${AWS_REGION}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - COGNITO_USER_POOL_ID=${COGNITO_USER_POOL_ID}
       - COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}
       - COGNITO_CLIENT_SECRET=${COGNITO_CLIENT_SECRET}
+    volumes:
+      - C:\Users\BigSheepu\.aws:/root/.aws:ro  # Mount AWS credentials (alternative to env vars)
     networks:
       - microservices-network
     healthcheck:
@@ -57,8 +57,8 @@ services:
       - NODE_ENV=production
       - PORT=3002
       - AWS_REGION=${AWS_REGION}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_PROFILE=default
+      - QUT_USERNAME=${QUT_USERNAME}
       - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - AUTH_SERVICE_URL=http://auth:3001
@@ -66,6 +66,7 @@ services:
       - SQS_TRANSCODING_QUEUE_URL=${SQS_TRANSCODING_QUEUE_URL}
     volumes:
       - ./shared:/app/shared:ro
+      - C:\Users\BigSheepu\.aws:/root/.aws:ro  # Mount AWS credentials
     networks:
       - microservices-network
     healthcheck:
@@ -87,16 +88,15 @@ services:
   # Upload Service
   upload:
     build:
-      context: .
-      dockerfile: ./upload-service/Dockerfile
+      context: ./upload-service
+      dockerfile: Dockerfile
     ports:
       - "3003:3003"
     environment:
       - NODE_ENV=production
       - PORT=3003
       - AWS_REGION=${AWS_REGION}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - QUT_USERNAME=${QUT_USERNAME}
       - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - ASSEMBLY_AI_API_KEY=${ASSEMBLY_AI_API_KEY}
@@ -107,6 +107,7 @@ services:
       - SQS_STORAGE_QUEUE_URL=${SQS_STORAGE_QUEUE_URL}
     volumes:
       - ./shared:/app/shared:ro
+      - C:\Users\BigSheepu\.aws:/root/.aws:ro  # Mount AWS credentials
     networks:
       - microservices-network
     healthcheck:
@@ -124,8 +125,7 @@ services:
     environment:
       - NODE_ENV=production
       - AWS_REGION=${AWS_REGION}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - QUT_USERNAME=${QUT_USERNAME}
       - DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
       - ASSEMBLY_AI_API_KEY=${ASSEMBLY_AI_API_KEY}
@@ -136,6 +136,7 @@ services:
       - SQS_NOTIFICATIONS_QUEUE_URL=${SQS_NOTIFICATIONS_QUEUE_URL}
     volumes:
       - ./shared:/app/shared:ro
+      - C:\Users\BigSheepu\.aws:/root/.aws:ro  # Mount AWS credentials
     networks:
       - microservices-network
     restart: unless-stopped

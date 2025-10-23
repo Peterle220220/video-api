@@ -1,5 +1,6 @@
 const express = require('express');
-const { signUp, confirmSignUp, login: cognitoLogin, respondToAuthChallenge, associateSoftwareTokenWithAccessToken, verifySoftwareTokenAndEnableMFA, disableMFA, verifyJwt } = require('../services/cognitoService');
+const { signUp, confirmSignUp, login: cognitoLogin, respondToAuthChallenge, associateSoftwareTokenWithAccessToken, verifySoftwareTokenAndEnableMFA, disableMFA } = require('../services/cognitoService');
+const { verifyJwt } = require('../services/external/cognitoService');
 
 const router = express.Router();
 
@@ -147,7 +148,11 @@ router.get('/profile', async (req, res) => {
             }
         });
     } catch (error) {
-        return res.status(401).json({ error: 'Invalid or expired token' });
+        // Check if it's a JWT expired error
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ error: 'Token expired' });
+        }
+        return res.status(401).json({ error: 'Invalid token' });
     }
 });
 

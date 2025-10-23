@@ -1,15 +1,16 @@
-const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const axios = require('axios');
+const { AWS_REGION, S3_BUCKET, QUT_USERNAME, DDB_TABLE, ASSEMBLY_AI_API_KEY, AAI_API_BASE } = require('../config/aws');
 
 class AssemblyAIWorker {
     constructor() {
-        this.s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-southeast-2' });
-        this.dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || 'ap-southeast-2' }));
-        this.tableName = process.env.DYNAMODB_TABLE_NAME || 'video-jobs';
-        this.assemblyAIKey = process.env.ASSEMBLY_AI_API_KEY;
-        this.assemblyAIBase = process.env.AAI_API_BASE || 'https://api.assemblyai.com/v2';
+        this.s3Client = new S3Client({ region: AWS_REGION });
+        this.dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: AWS_REGION }));
+        this.tableName = DDB_TABLE;
+        this.assemblyAIKey = ASSEMBLY_AI_API_KEY;
+        this.assemblyAIBase = AAI_API_BASE;
     }
 
     async process(messageBody, message) {
@@ -34,6 +35,16 @@ class AssemblyAIWorker {
             // Poll for completion
             const result = await this.pollAssemblyAI(transcriptId);
             
+            // Create metadata file in S3
+            await this.createMetadataFile(videoId, {
+                status: 'completed',
+                transcriptId,
+                summary: result.summary,
+                transcript: result.transcript,
+                confidence: result.confidence,
+                updatedAt: new Date().toISOString()
+            });
+
             // Update job status to completed
             await this.updateJobStatus(videoId, {
                 assemblyai_status: 'completed',
@@ -48,6 +59,17 @@ class AssemblyAIWorker {
 
         } catch (error) {
             console.error(`❌ AssemblyAI processing failed for video ${messageBody.videoId}:`, error);
+            
+            // Create error metadata file in S3
+            try {
+                await this.createMetadataFile(messageBody.videoId, {
+                    status: 'error',
+                    error: error.message,
+                    updatedAt: new Date().toISOString()
+                });
+            } catch (metaError) {
+                console.error('❌ Failed to create error metadata file:', metaError);
+            }
             
             // Update job status to failed
             await this.updateJobStatus(messageBody.videoId, {
@@ -67,7 +89,7 @@ class AssemblyAIWorker {
             const { GetObjectCommand } = require('@aws-sdk/client-s3');
             
             const command = new GetObjectCommand({
-                Bucket: process.env.S3_BUCKET_NAME,
+                Bucket: S3_BUCKET,
                 Key: s3Key
             });
 
@@ -143,6 +165,26 @@ class AssemblyAIWorker {
 
         } catch (error) {
             console.error('❌ Error polling AssemblyAI:', error);
+            throw error;
+        }
+    }
+
+    async createMetadataFile(videoId, metadata) {
+        try {
+            const key = `meta/${videoId}.json`;
+            const content = JSON.stringify(metadata, null, 2);
+            
+            const command = new PutObjectCommand({
+                Bucket: S3_BUCKET,
+                Key: key,
+                Body: content,
+                ContentType: 'application/json'
+            });
+            
+            await this.s3Client.send(command);
+            console.log(`📄 Created metadata file for video ${videoId}: s3://${S3_BUCKET}/${key}`);
+        } catch (error) {
+            console.error('❌ Error creating metadata file:', error);
             throw error;
         }
     }

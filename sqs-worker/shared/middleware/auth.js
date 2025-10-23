@@ -14,6 +14,10 @@ const authenticateToken = async (req, res, next) => {
         const userData = await serviceCommunication.auth.verifyToken(token);
         
         if (!userData.success) {
+            // Check if it's a token expired error
+            if (userData.error === 'Token expired') {
+                return res.status(401).json({ error: 'Token expired' });
+            }
             return res.status(401).json({ error: 'Invalid token' });
         }
 

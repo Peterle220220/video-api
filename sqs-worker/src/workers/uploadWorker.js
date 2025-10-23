@@ -1,12 +1,13 @@
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { AWS_REGION, S3_BUCKET, QUT_USERNAME, DDB_TABLE } = require('../config/aws');
 
 class UploadWorker {
     constructor() {
-        this.s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-southeast-2' });
-        this.dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || 'ap-southeast-2' }));
-        this.tableName = process.env.DYNAMODB_TABLE_NAME || 'video-jobs';
+        this.s3Client = new S3Client({ region: AWS_REGION });
+        this.dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: AWS_REGION }));
+        this.tableName = DDB_TABLE;
     }
 
     async process(messageBody, message) {
@@ -58,7 +59,7 @@ class UploadWorker {
             
             // Get file info from S3
             const command = new GetObjectCommand({
-                Bucket: process.env.S3_BUCKET_NAME,
+                Bucket: S3_BUCKET,
                 Key: s3Key
             });
 
@@ -99,13 +100,23 @@ class UploadWorker {
 
     async updateJobStatus(videoId, updates) {
         try {
+            const exprNames = {};
+            const exprValues = {};
+            const sets = [];
+            for (const [k, v] of Object.entries(updates)) {
+                const nameKey = `#${k.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+                const valueKey = `:${k.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+                exprNames[nameKey] = k;
+                exprValues[valueKey] = v;
+                sets.push(`${nameKey} = ${valueKey}`);
+            }
+
             const command = new UpdateCommand({
                 TableName: this.tableName,
-                Key: { video_id: videoId },
-                UpdateExpression: 'SET ' + Object.keys(updates).map(key => `${key} = :${key}`).join(', '),
-                ExpressionAttributeValues: Object.fromEntries(
-                    Object.entries(updates).map(([key, value]) => [`:${key}`, value])
-                )
+                Key: { 'qut-username': QUT_USERNAME, sk: `VIDEO#${videoId}` },
+                UpdateExpression: `SET ${sets.join(', ')}`,
+                ExpressionAttributeNames: exprNames,
+                ExpressionAttributeValues: exprValues
             });
 
             await this.dynamoClient.send(command);

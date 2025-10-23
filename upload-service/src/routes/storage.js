@@ -1,12 +1,47 @@
 const express = require('express');
+const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { authenticateToken } = require('../../shared/middleware/auth');
-const { presignUpload, presignDownload, buildMetaKey, uploadBuffer } = require('../services/s3Service');
+// const { authenticateToken } = require('../../shared/middleware/auth');
+const {authenticateToken} = require('../middleware/auth');
+const { presignUpload, presignDownload, buildMetaKey, uploadBuffer, headObject } = require('../services/s3Service');
 const assemblyAI = require('../services/assemblyAIService');
 const UploadQueueService = require('../services/uploadQueue');
 
 // Initialize queue service
 const uploadQueue = new UploadQueueService();
+
+// Helper function to create initial meta file
+async function createInitialMetaFile(videoId) {
+    try {
+        const { PutObjectCommand } = require('@aws-sdk/client-s3');
+        const { s3Client } = require('../config/aws');
+        
+        const metaKey = buildMetaKey(videoId);
+        const initialMeta = {
+            status: 'processing',
+            videoId: videoId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            transcriptId: null,
+            summary: null,
+            transcript: null,
+            confidence: null
+        };
+
+        const command = new PutObjectCommand({
+            Bucket: process.env.S3_BUCKET_NAME || 'cab432-a2-n12122882',
+            Key: metaKey,
+            Body: JSON.stringify(initialMeta, null, 2),
+            ContentType: 'application/json'
+        });
+
+        await s3Client.send(command);
+        console.log(`📝 Created initial meta file for ${videoId}`);
+    } catch (error) {
+        console.error('❌ Error creating initial meta file:', error);
+        throw error;
+    }
+}
 
 const router = express.Router();
 
@@ -99,6 +134,13 @@ router.get('/metadata/:videoId', authenticateToken, async (req, res) => {
         const key = buildMetaKey(videoId);
         
         try {
+            // Check if metadata file exists first
+            const head = await headObject(key);
+            if (!head) {
+                // Create initial meta file if it doesn't exist
+                await createInitialMetaFile(videoId);
+            }
+            
             const url = await presignDownload(key);
             return res.json({ videoId, metaUrl: url });
         } catch (_) {

@@ -4,13 +4,47 @@ const { v4: uuidv4 } = require('uuid');
 const transcodingService = require('../services/transcodingService');
 const TranscodingQueueService = require('../services/transcodingQueue');
 const { getCurrentCPUUsage, getCPUUsageHistory, getSystemInfo, getMemoryUsage } = require('../utils/cpuMonitor');
-const { authenticateToken } = require('../../shared/middleware/auth');
+// const { authenticateToken } = require('../../shared/middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
 const { listPrefix, presignDownload, buildProcessedKey, buildMetaKey, deletePrefix, headObject, getObjectJson, deleteObject } = require('../services/s3Service');
 const { putVideo, getJob, queryJobsByVideoId, updateJob, listVideos } = require('../services/dynamoService');
 const { listActiveJobs } = require('../services/dynamoService');
 
 // Initialize queue service
 const transcodingQueue = new TranscodingQueueService();
+
+// Helper function to create initial meta file
+async function createInitialMetaFile(videoId) {
+    try {
+        const { PutObjectCommand } = require('@aws-sdk/client-s3');
+        const { s3Client } = require('../config/aws');
+        
+        const metaKey = buildMetaKey(videoId);
+        const initialMeta = {
+            status: 'processing',
+            videoId: videoId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            transcriptId: null,
+            summary: null,
+            transcript: null,
+            confidence: null
+        };
+
+        const command = new PutObjectCommand({
+            Bucket: process.env.S3_BUCKET_NAME || 'cab432-a2-n12122882',
+            Key: metaKey,
+            Body: JSON.stringify(initialMeta, null, 2),
+            ContentType: 'application/json'
+        });
+
+        await s3Client.send(command);
+        console.log(`📝 Created initial meta file for ${videoId}`);
+    } catch (error) {
+        console.error('❌ Error creating initial meta file:', error);
+        throw error;
+    }
+}
 
 const router = express.Router();
 
@@ -117,8 +151,21 @@ router.get('/status/:jobId', authenticateToken, async (req, res) => {
             };
         });
 
+        // Convert resolutionProgress array to object for easier frontend consumption
+        const resolutionProgressObj = {};
+        resolutionProgress.forEach(rp => {
+            resolutionProgressObj[rp.resolution] = {
+                progress: rp.progress,
+                status: rp.status,
+                url: rp.url
+            };
+        });
+
         res.json({
-            job: jobStatus,
+            job: {
+                ...jobStatus,
+                resolution_progress: resolutionProgressObj
+            },
             urls,
             resolutionProgress,
             currentCPUUsage: cpuUsage,
@@ -421,10 +468,19 @@ router.get('/videos/:videoId/meta', authenticateToken, async (req, res) => {
     try {
         const { videoId } = req.params;
         const key = buildMetaKey(videoId);
+        
         try {
+            // Check if metadata file exists
+            const head = await headObject(key);
+            if (!head) {
+                // Create initial meta file if it doesn't exist
+                await createInitialMetaFile(videoId);
+            }
+            
             const url = await presignDownload(key);
             return res.json({ videoId, metaUrl: url });
-        } catch (_) {
+        } catch (error) {
+            console.log(`Metadata file not found for video ${videoId}:`, error.message);
             return res.status(404).json({ error: 'Metadata not found' });
         }
     } catch (error) {

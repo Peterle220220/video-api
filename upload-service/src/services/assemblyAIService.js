@@ -5,7 +5,7 @@ const fsSync = require('fs');
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
 const { uploadFileStream, uploadBuffer, buildMetaKey, presignDownload } = require('./s3Service');
-const AAI_API_BASE = process.env.AAI_API_BASE;
+const AAI_API_BASE = process.env.AAI_API_BASE || 'https://api.assemblyai.com/v2';
 var AAI_API_KEY = process.env.AAI_API_KEY;
 const secret_name = "cab432-a2-n12122882/ASSEMBLYAI_API_KEY";
 

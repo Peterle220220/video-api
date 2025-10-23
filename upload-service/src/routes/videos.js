@@ -1,7 +1,8 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs').promises;
-const { authenticateToken } = require('../../shared/middleware/auth');
+// const { authenticateToken } = require('../../shared/middleware/auth');
+const {authenticateToken} = require('../middleware/auth');
 const { updateVideoDescription } = require('../services/dynamoService');
 const { buildMetaKey, uploadBuffer, presignDownload } = require('../services/s3Service');
 

@@ -2,9 +2,9 @@ const jwt = require('jsonwebtoken');
 const jwksClient = require('jwks-rsa');
 
 // Cognito configuration
-const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
+const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || 'ap-southeast-2_wgTgFFTuB';
 const COGNITO_REGION = process.env.AWS_REGION || 'ap-southeast-2';
-const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID;
+const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID || '1o00oog3qb82t1qgvi62lfv9fa';
 
 // JWKS client for token verification
 const client = jwksClient({

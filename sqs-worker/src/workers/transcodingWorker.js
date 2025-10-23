@@ -1,15 +1,17 @@
-const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
-const { DynamoDBDocumentClient, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { DynamoDBDocumentClient, UpdateCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
 const ffmpeg = require('fluent-ffmpeg');
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
+const { AWS_REGION, S3_BUCKET, QUT_USERNAME, DDB_TABLE } = require('../config/aws');
 
 class TranscodingWorker {
     constructor() {
-        this.s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-southeast-2' });
-        this.dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || 'ap-southeast-2' }));
-        this.tableName = process.env.DYNAMODB_TABLE_NAME || 'video-jobs';
+        this.s3Client = new S3Client({ region: AWS_REGION });
+        this.dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: AWS_REGION }));
+        this.tableName = DDB_TABLE;
     }
 
     async process(messageBody, message) {
@@ -17,6 +19,9 @@ class TranscodingWorker {
             const { videoId, inputSource, resolutions, retryCount = 0 } = messageBody;
             
             console.log(`🎬 Processing transcoding job for video ${videoId}`);
+            
+            // Create initial meta file to prevent 404 errors
+            await this.createInitialMetaFile(videoId);
             
             // Update job status to processing
             await this.updateJobStatus(videoId, {
@@ -64,10 +69,15 @@ class TranscodingWorker {
     async downloadVideo(inputSource, videoId) {
         try {
             const { key } = inputSource;
-            const localPath = `/tmp/${videoId}_${Date.now()}.mp4`;
+            
+            // Create temp directory if it doesn't exist
+            const tempDir = process.platform === 'win32' ? 'E:\\tmp' : '/tmp';
+            await fs.mkdir(tempDir, { recursive: true });
+            
+            const localPath = `${tempDir}/${videoId}_${Date.now()}.mp4`;
             
             const command = new GetObjectCommand({
-                Bucket: process.env.S3_BUCKET_NAME,
+                Bucket: S3_BUCKET,
                 Key: key
             });
 
@@ -92,11 +102,14 @@ class TranscodingWorker {
     async transcodeVideo(inputPath, videoId, resolutions) {
         const results = [];
         
+        // Get temp directory (same as downloadVideo)
+        const tempDir = process.platform === 'win32' ? 'E:\\tmp' : '/tmp';
+        
         for (const resolution of resolutions) {
             try {
                 console.log(`🎞️ Transcoding to ${resolution}...`);
                 
-                const outputPath = `/tmp/${videoId}_${resolution}_${Date.now()}.mp4`;
+                const outputPath = `${tempDir}/${videoId}_${resolution}_${Date.now()}.mp4`;
                 
                 await new Promise((resolve, reject) => {
                     ffmpeg(inputPath)
@@ -111,14 +124,21 @@ class TranscodingWorker {
                         .output(outputPath)
                         .on('end', () => {
                             console.log(`✅ Transcoding completed for ${resolution}`);
+                            // Update progress to 100% when completed
+                            this.updateResolutionProgress(videoId, resolution, 100, 'completed');
                             resolve();
                         })
                         .on('error', (err) => {
                             console.error(`❌ Transcoding failed for ${resolution}:`, err);
+                            // Update progress to failed
+                            this.updateResolutionProgress(videoId, resolution, 0, 'failed');
                             reject(err);
                         })
                         .on('progress', (progress) => {
-                            console.log(`📊 ${resolution} progress: ${progress.percent}%`);
+                            const percent = Math.round(progress.percent || 0);
+                            console.log(`📊 ${resolution} progress: ${percent}%`);
+                            // Update progress in real-time
+                            this.updateResolutionProgress(videoId, resolution, percent, 'processing');
                         })
                         .run();
                 });
@@ -131,6 +151,8 @@ class TranscodingWorker {
 
             } catch (error) {
                 console.error(`❌ Failed to transcode ${resolution}:`, error);
+                // Update progress to failed
+                this.updateResolutionProgress(videoId, resolution, 0, 'failed');
                 throw error;
             }
         }
@@ -139,25 +161,57 @@ class TranscodingWorker {
     }
 
     async uploadTranscodedVideos(results, videoId) {
-        // This would implement S3 upload logic
-        // For now, just log the results
         console.log(`📤 Uploading ${results.length} transcoded videos for ${videoId}`);
         
         for (const result of results) {
-            console.log(`📤 Uploading ${result.resolution} to ${result.s3Key}`);
-            // Implement S3 upload here
+            try {
+                console.log(`📤 Uploading ${result.resolution} to ${result.s3Key}`);
+                
+                // Read the local file and upload to S3
+                const readStream = fsSync.createReadStream(result.localPath);
+                
+                const uploadCommand = new PutObjectCommand({
+                    Bucket: S3_BUCKET,
+                    Key: result.s3Key,
+                    Body: readStream,
+                    ContentType: 'video/mp4'
+                });
+                
+                await this.s3Client.send(uploadCommand);
+                console.log(`✅ Successfully uploaded ${result.resolution} to S3`);
+                
+            } catch (error) {
+                console.error(`❌ Failed to upload ${result.resolution}:`, error);
+                throw error;
+            }
         }
     }
 
     async updateJobStatus(videoId, updates) {
         try {
+            // Create expression attribute names to handle reserved keywords
+            const expressionAttributeNames = {};
+            const updateExpressions = [];
+            const expressionAttributeValues = {};
+
+            Object.entries(updates).forEach(([key, value]) => {
+                const nameKey = `#${key}`;
+                const valueKey = `:${key}`;
+                
+                expressionAttributeNames[nameKey] = key;
+                expressionAttributeValues[valueKey] = value;
+                updateExpressions.push(`${nameKey} = ${valueKey}`);
+            });
+
             const command = new UpdateCommand({
                 TableName: this.tableName,
-                Key: { video_id: videoId },
-                UpdateExpression: 'SET ' + Object.keys(updates).map(key => `${key} = :${key}`).join(', '),
-                ExpressionAttributeValues: Object.fromEntries(
-                    Object.entries(updates).map(([key, value]) => [`:${key}`, value])
-                )
+                Key: { 
+                    'qut-username': QUT_USERNAME,
+                    'sk': `VIDEO#${videoId}`
+                },
+                UpdateExpression: 'SET ' + updateExpressions.join(', '),
+                ExpressionAttributeNames: expressionAttributeNames,
+                ExpressionAttributeValues: expressionAttributeValues
             });
 
             await this.dynamoClient.send(command);
@@ -165,6 +219,99 @@ class TranscodingWorker {
         } catch (error) {
             console.error('❌ Error updating job status:', error);
             throw error;
+        }
+    }
+
+    async createInitialMetaFile(videoId) {
+        try {
+            const metaKey = `meta/${videoId}.json`;
+            const initialMeta = {
+                status: 'processing',
+                videoId: videoId,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                transcriptId: null,
+                summary: null,
+                transcript: null,
+                confidence: null
+            };
+
+            const command = new PutObjectCommand({
+                Bucket: S3_BUCKET,
+                Key: metaKey,
+                Body: JSON.stringify(initialMeta, null, 2),
+                ContentType: 'application/json'
+            });
+
+            await this.s3Client.send(command);
+            console.log(`📝 Created initial meta file for ${videoId}`);
+        } catch (error) {
+            console.error('❌ Error creating initial meta file:', error);
+            // Don't throw error as this is not critical
+        }
+    }
+
+    async updateResolutionProgress(videoId, resolution, progress, status) {
+        try {
+            // Get current job data
+            const getCommand = new GetCommand({
+                TableName: this.tableName,
+                Key: { 
+                    'qut-username': QUT_USERNAME,
+                    'sk': `VIDEO#${videoId}`
+                }
+            });
+
+            const currentJob = await this.dynamoClient.send(getCommand);
+            const currentResolutionProgress = currentJob.Item?.resolution_progress || {};
+
+            // Update the specific resolution progress
+            currentResolutionProgress[resolution] = {
+                progress: Math.max(0, Math.min(100, progress)),
+                status: status,
+                updatedAt: new Date().toISOString()
+            };
+
+            // Calculate overall progress
+            const resolutionList = ['1920x1080', '1280x720', '854x480'];
+            const totalProgress = resolutionList.reduce((acc, res) => {
+                return acc + (currentResolutionProgress[res]?.progress || 0);
+            }, 0);
+            const overallProgress = Math.floor(totalProgress / resolutionList.length);
+
+            // Determine overall status
+            const statuses = resolutionList.map(res => currentResolutionProgress[res]?.status || 'processing');
+            let overallStatus = 'processing';
+            if (statuses.every(s => s === 'completed')) {
+                overallStatus = 'completed';
+            } else if (statuses.some(s => s === 'failed')) {
+                overallStatus = 'failed';
+            }
+
+            // Update job with new progress
+            const updateCommand = new UpdateCommand({
+                TableName: this.tableName,
+                Key: { 
+                    'qut-username': QUT_USERNAME,
+                    'sk': `VIDEO#${videoId}`
+                },
+                UpdateExpression: 'SET resolution_progress = :rp, progress = :p, #status = :s, updated_at = :ua',
+                ExpressionAttributeNames: {
+                    '#status': 'status'
+                },
+                ExpressionAttributeValues: {
+                    ':rp': currentResolutionProgress,
+                    ':p': overallProgress,
+                    ':s': overallStatus,
+                    ':ua': new Date().toISOString()
+                }
+            });
+
+            await this.dynamoClient.send(updateCommand);
+            console.log(`📊 Updated ${resolution} progress: ${progress}% (${status})`);
+        } catch (error) {
+            console.error('❌ Error updating resolution progress:', error);
+            // Don't throw error as this is not critical for transcoding
         }
     }
 

@@ -1,8 +1,8 @@
-const { SQSClient, SendMessageCommand, ReceiveMessageCommand, DeleteMessageCommand, CreateQueueCommand, GetQueueAttributesCommand } = require('@aws-sdk/client-sqs');
+const SQS = require('@aws-sdk/client-sqs');
 
 class SQSService {
     constructor(region = 'ap-southeast-2') {
-        this.client = new SQSClient({ region });
+        this.client = new SQS.SQSClient({ region });
         this.region = region;
         this.queues = {
             transcoding: 'https://sqs.ap-southeast-2.amazonaws.com/901444280953/transcoding-queue',
@@ -20,7 +20,7 @@ class SQSService {
                 throw new Error(`Queue ${queueName} not found`);
             }
 
-            const command = new SendMessageCommand({
+            const command = new SQS.SendMessageCommand({
                 QueueUrl: queueUrl,
                 MessageBody: typeof messageBody === 'string' ? messageBody : JSON.stringify(messageBody),
                 DelaySeconds: options.delaySeconds || 0,
@@ -44,7 +44,7 @@ class SQSService {
                 throw new Error(`Queue ${queueName} not found`);
             }
 
-            const command = new ReceiveMessageCommand({
+            const command = new SQS.ReceiveMessageCommand({
                 QueueUrl: queueUrl,
                 MaxNumberOfMessages: options.maxMessages || 1,
                 WaitTimeSeconds: options.waitTime || 20,
@@ -68,7 +68,7 @@ class SQSService {
                 throw new Error(`Queue ${queueName} not found`);
             }
 
-            const command = new DeleteMessageCommand({
+            const command = new SQS.DeleteMessageCommand({
                 QueueUrl: queueUrl,
                 ReceiptHandle: receiptHandle
             });
@@ -168,7 +168,7 @@ class SQSService {
                 };
             }
 
-            const command = new GetQueueAttributesCommand({
+            const command = new SQS.GetQueueAttributesCommand({
                 QueueUrl: queueUrl,
                 AttributeNames: ['All']
             });

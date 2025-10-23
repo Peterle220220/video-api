@@ -5,18 +5,16 @@ RUN apk add --no-cache ffmpeg
 
 WORKDIR /app
 
-# Copy package files from transcoding-service
-COPY ./transcoding-service/package.json ./
-COPY ./transcoding-service/package-lock.json ./
+# Copy package files
+COPY package.json ./
 
 # Install dependencies
 RUN npm install --only=production
 
 # Copy source code
-COPY ./transcoding-service/src ./src
+COPY ./transcoding-service/ .
 
-# Copy shared middleware
-COPY ./shared ./shared
+# Note: Shared middleware is mounted as volume in docker-compose.yml
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

@@ -8,7 +8,7 @@ const client = new CognitoIdentityProviderClient({
 
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID || 'ap-southeast-2_wgTgFFTuB';
 const CLIENT_ID = process.env.COGNITO_CLIENT_ID || '1o00oog3qb82t1qgvi62lfv9fa';
-const CLIENT_SECRET = process.env.COGNITO_CLIENT_SECRET;
+const CLIENT_SECRET = process.env.COGNITO_CLIENT_SECRET || '1oftmplton69rcfvg4egrme6ia2vkheebc9u7u1im9l6gqdf48ql';
 
 // Function to calculate SECRET_HASH
 function calculateSecretHash(username) {
