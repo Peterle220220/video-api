@@ -5,11 +5,11 @@
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_lb" "main" {
-  name               = "${var.project_name}-${var.qut_username}-alb"
+  name               = "n12122882-alb-terraform"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [data.aws_security_group.existing.id]
-  subnets            = data.aws_subnets.public.ids
+  subnets            = ["subnet-075811427d5564cf9", "subnet-05a3b8177138c8b14"]
 
   tags = {
     qut-username = var.qut_username
@@ -59,7 +59,7 @@ resource "aws_lb_target_group" "auth" {
 }
 
 resource "aws_lb_target_group" "transcoding" {
-  name        = "${var.project_name}-transcoding-tg"
+  name        = "n12122882-transcoding-tg"
   port        = 3002
   protocol    = "HTTP"
   vpc_id      = data.aws_vpc.default.id

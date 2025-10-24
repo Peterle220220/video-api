@@ -4,17 +4,13 @@
 # ---------------------------------------------------------------------------------------------------------------------
 
 data "aws_vpc" "default" {
-  default = true
+  id = "vpc-007bab53289655834"
 }
 
 data "aws_subnets" "public" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.default.id]
-  }
-  filter {
-    name   = "tag:aws-controltower:NetConfig"
-    values = ["Public"]
   }
 }
 

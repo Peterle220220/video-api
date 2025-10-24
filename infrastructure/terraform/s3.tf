@@ -7,7 +7,7 @@ variable "s3_bucket_name" {
 # Bucket for video uploads
 # This will be integrated with the Lambda function trigger
 resource "aws_s3_bucket" "uploads" {
-  bucket = "cab432-a3-${var.qut_username}-uploads"
+  bucket = "cab432-a3-n12122882-uploads"
 
   tags = {
     Name         = "cab432-a3-${var.qut_username}-uploads"
@@ -28,7 +28,7 @@ resource "aws_s3_bucket_public_access_block" "uploads_public_access_block" {
 # Bucket for hosting the static React web application
 # This will be the origin for the CloudFront distribution
 resource "aws_s3_bucket" "webapp" {
-  bucket = "cab432-a3-${var.qut_username}-webapp"
+  bucket = "cab432-a3-n12122882-webapp"
 
   tags = {
     Name         = "cab432-a3-${var.qut_username}-webapp"

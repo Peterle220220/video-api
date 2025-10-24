@@ -13,27 +13,17 @@ output "alb_dns_name" {
   value       = aws_lb.main.dns_name
 }
 
-output "ecr_repository_urls" {
-  description = "Map of ECR repository URLs for Docker images."
-  value = {
-    web          = aws_ecr_repository.web.repository_url
-    auth         = aws_ecr_repository.auth.repository_url
-    transcoding  = aws_ecr_repository.transcoding.repository_url
-    upload       = aws_ecr_repository.upload.repository_url
-    sqs_worker   = aws_ecr_repository.sqs_worker.repository_url
-  }
-}
+# output "ecr_repository_urls" {
+#   description = "Map of ECR repository URLs for Docker images."
+#   value = {
+#     web          = "901444280953.dkr.ecr.ap-southeast-2.amazonaws.com/n12122882-cab432-a3-web"
+#     auth         = "901444280953.dkr.ecr.ap-southeast-2.amazonaws.com/n12122882-cab432-a3-auth-service"
+#     transcoding  = "901444280953.dkr.ecr.ap-southeast-2.amazonaws.com/n12122882-cab432-a3-transcoding-service"
+#     upload       = "901444280953.dkr.ecr.ap-southeast-2.amazonaws.com/n12122882-cab432-a3-upload-service"
+#     sqs_worker   = "901444280953.dkr.ecr.ap-southeast-2.amazonaws.com/n12122882-cab432-a3-sqs-worker"
+#   }
+# }
 
-output "sqs_queue_urls" {
-  description = "URLs of the SQS queues."
-  value = {
-    transcoding_queue = aws_sqs_queue.transcoding_queue.id
-    transcoding_dlq   = aws_sqs_queue.transcoding_dlq.id
-    upload_queue      = aws_sqs_queue.upload_queue.id
-    storage_queue     = aws_sqs_queue.storage_queue.id
-    notifications_queue = aws_sqs_queue.notifications_queue.id
-  }
-}
 
 output "existing_resources" {
   description = "Information about existing resources from Assessment 2."
@@ -50,7 +40,8 @@ output "ecs_cluster_name" {
   value       = aws_ecs_cluster.main.name
 }
 
-output "lambda_function_name" {
-  description = "The name of the Lambda function."
-  value       = aws_lambda_function.s3_trigger_lambda.function_name
-}
+# Lambda function commented out - no IAM role available
+# output "lambda_function_name" {
+#   description = "The name of the Lambda function."
+#   value       = aws_lambda_function.s3_trigger_lambda.function_name
+# }

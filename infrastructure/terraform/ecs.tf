@@ -4,18 +4,20 @@
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_ecs_cluster" "main" {
-  name = "${var.project_name}-${var.qut_username}-cluster"
+  name = "n12122882-a3-cluster"
 
   setting {
     name  = "containerInsights"
     value = "enabled"
   }
 
+
   tags = {
     qut-username = var.qut_username
     purpose      = "assessment"
   }
 }
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # LOGGING
@@ -24,42 +26,30 @@ resource "aws_ecs_cluster" "main" {
 
 resource "aws_cloudwatch_log_group" "web" {
   name = "/ecs/${var.project_name}-web"
-  tags = {
-    qut-username = var.qut_username
-    purpose      = "assessment"
-  }
 }
 
 resource "aws_cloudwatch_log_group" "auth" {
   name = "/ecs/${var.project_name}-auth"
-  tags = {
-    qut-username = var.qut_username
-    purpose      = "assessment"
-  }
 }
 
 resource "aws_cloudwatch_log_group" "transcoding" {
   name = "/ecs/${var.project_name}-transcoding"
-  tags = {
-    qut-username = var.qut_username
-    purpose      = "assessment"
-  }
 }
 
 resource "aws_cloudwatch_log_group" "upload" {
   name = "/ecs/${var.project_name}-upload"
-  tags = {
-    qut-username = var.qut_username
-    purpose      = "assessment"
-  }
 }
 
 resource "aws_cloudwatch_log_group" "sqs_worker" {
   name = "/ecs/${var.project_name}-sqs-worker"
-  tags = {
-    qut-username = var.qut_username
-    purpose      = "assessment"
-  }
+}
+
+resource "aws_cloudwatch_log_group" "maintenance" {
+  name = "/ecs/${var.project_name}-maintenance"
+}
+
+resource "aws_cloudwatch_log_group" "log_cleanup" {
+  name = "/ecs/${var.project_name}-log-cleanup"
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -74,8 +64,8 @@ resource "aws_ecs_task_definition" "web" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.ecs_task_cpu
   memory                   = var.ecs_task_memory
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  task_role_arn            = aws_iam_role.ecs_task_role.arn
+  execution_role_arn       = "arn:aws:iam::901444280953:role/Execution-Role-CAB432-ECS"
+  task_role_arn            = "arn:aws:iam::901444280953:role/Task-Role-CAB432-ECS"
 
   container_definitions = jsonencode([
     {
@@ -128,8 +118,8 @@ resource "aws_ecs_task_definition" "auth" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.ecs_task_cpu
   memory                   = var.ecs_task_memory
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  task_role_arn            = aws_iam_role.ecs_task_role.arn
+  execution_role_arn       = "arn:aws:iam::901444280953:role/Execution-Role-CAB432-ECS"
+  task_role_arn            = "arn:aws:iam::901444280953:role/Task-Role-CAB432-ECS"
 
   container_definitions = jsonencode([
     {
@@ -190,8 +180,8 @@ resource "aws_ecs_task_definition" "transcoding" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.transcoding_task_cpu
   memory                   = var.transcoding_task_memory
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  task_role_arn            = aws_iam_role.ecs_task_role.arn
+  execution_role_arn       = "arn:aws:iam::901444280953:role/Execution-Role-CAB432-ECS"
+  task_role_arn            = "arn:aws:iam::901444280953:role/Task-Role-CAB432-ECS"
 
   container_definitions = jsonencode([
     {
@@ -227,10 +217,6 @@ resource "aws_ecs_task_definition" "transcoding" {
           name  = "DYNAMODB_TABLE_NAME"
           value = var.existing_dynamodb_table
         },
-        {
-          name  = "SQS_TRANSCODING_QUEUE_URL"
-          value = aws_sqs_queue.transcoding_queue.id
-        }
       ]
       logConfiguration = {
         logDriver = "awslogs"
@@ -256,8 +242,8 @@ resource "aws_ecs_task_definition" "upload" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.ecs_task_cpu
   memory                   = var.ecs_task_memory
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  task_role_arn            = aws_iam_role.ecs_task_role.arn
+  execution_role_arn       = "arn:aws:iam::901444280953:role/Execution-Role-CAB432-ECS"
+  task_role_arn            = "arn:aws:iam::901444280953:role/Task-Role-CAB432-ECS"
 
   container_definitions = jsonencode([
     {
@@ -292,14 +278,6 @@ resource "aws_ecs_task_definition" "upload" {
         {
           name  = "DYNAMODB_TABLE_NAME"
           value = var.existing_dynamodb_table
-        },
-        {
-          name  = "SQS_UPLOAD_QUEUE_URL"
-          value = aws_sqs_queue.upload_queue.id
-        },
-        {
-          name  = "SQS_STORAGE_QUEUE_URL"
-          value = aws_sqs_queue.storage_queue.id
         }
       ]
       logConfiguration = {
@@ -326,8 +304,8 @@ resource "aws_ecs_task_definition" "sqs_worker" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.transcoding_task_cpu
   memory                   = var.transcoding_task_memory
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
-  task_role_arn            = aws_iam_role.ecs_task_role.arn
+  execution_role_arn       = "arn:aws:iam::901444280953:role/Execution-Role-CAB432-ECS"
+  task_role_arn            = "arn:aws:iam::901444280953:role/Task-Role-CAB432-ECS"
 
   container_definitions = jsonencode([
     {
@@ -352,22 +330,6 @@ resource "aws_ecs_task_definition" "sqs_worker" {
         {
           name  = "DYNAMODB_TABLE_NAME"
           value = var.existing_dynamodb_table
-        },
-        {
-          name  = "SQS_TRANSCODING_QUEUE_URL"
-          value = aws_sqs_queue.transcoding_queue.id
-        },
-        {
-          name  = "SQS_UPLOAD_QUEUE_URL"
-          value = aws_sqs_queue.upload_queue.id
-        },
-        {
-          name  = "SQS_STORAGE_QUEUE_URL"
-          value = aws_sqs_queue.storage_queue.id
-        },
-        {
-          name  = "SQS_NOTIFICATIONS_QUEUE_URL"
-          value = aws_sqs_queue.notifications_queue.id
         }
       ]
       logConfiguration = {
@@ -399,6 +361,18 @@ resource "aws_ecs_service" "web" {
   desired_count   = 1
   launch_type     = "FARGATE"
 
+  # Rolling update configuration with failure detection
+  deployment_maximum_percent         = 200  # Allow up to 200% of desired count during deployment
+  deployment_minimum_healthy_percent = 50   # Keep at least 50% healthy during deployment
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true  # Automatically rollback on failure
+  }
+
+  # Health check grace period
+  health_check_grace_period_seconds = 60
+
   network_configuration {
     subnets         = data.aws_subnets.public.ids
     security_groups = [data.aws_security_group.existing.id]
@@ -410,6 +384,7 @@ resource "aws_ecs_service" "web" {
     container_name   = "web"
     container_port   = 3000
   }
+
 
   depends_on = [aws_lb_listener.https]
 }
