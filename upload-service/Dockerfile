@@ -4,13 +4,13 @@ WORKDIR /app
 
 # Copy package files
 COPY package.json package-lock.json ./
+COPY ../shared/ ./shared/
 
 # Install dependencies
 RUN npm ci --only=production
 
-# Copy source code (excluding shared folder as it's mounted as volume)
+# Copy source code
 COPY . .
-RUN rm -rf ./shared
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

@@ -2,7 +2,7 @@ const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { AWS_REGION, S3_BUCKET, QUT_USERNAME, DDB_TABLE } = require('../config/aws');
-const EnhancedSQSService = require('../../shared/services/enhancedSqsService');
+const EnhancedSQSService = require('../../../shared/services/enhancedSqsService');
 
 class UploadWorker {
     constructor() {

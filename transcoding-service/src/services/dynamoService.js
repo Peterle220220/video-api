@@ -4,7 +4,6 @@ const { dynamoDocClient, QUT_USERNAME, DDB_TABLE } = require('../config/aws');
 const docClient = DynamoDBDocumentClient.from(dynamoDocClient, {
     marshallOptions: { removeUndefinedValues: true, convertEmptyValues: false },
 });
-
 // Helpers for single-table design
 function makeVideoKey(videoId) {
     return `VIDEO#${videoId}`;
@@ -75,10 +74,6 @@ async function putJob(item) {
     });
     await docClient.send(new PutCommand({ TableName: DDB_TABLE, Item: record }));
     // Invalidate potentially affected caches
-    try {
-        await cacheDel(`job:${QUT_USERNAME}:${jobId}`);
-        await cacheDel(`jobs:active:${QUT_USERNAME}`);
-    } catch (_) {}
 }
 
 // Note: We don't know videoId from jobId alone; query by PK and filter by job_id
@@ -118,11 +113,6 @@ async function updateJob(jobId, updates) {
         ReturnValues: 'ALL_NEW'
     }));
     // Invalidate caches
-    try {
-        await cacheDel(`job:${QUT_USERNAME}:${jobId}`);
-        // Active jobs list cache
-        await cacheDel(`jobs:active:${QUT_USERNAME}`);
-    } catch (_) {}
     return res.Attributes || null;
 }
 

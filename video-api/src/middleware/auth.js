@@ -25,7 +25,11 @@ const authenticateToken = async (req, res, next) => {
         };
         return next();
     } catch (e) {
-        return res.status(403).json({ error: 'Invalid or expired token' });
+        // Check if it's a JWT expired error
+        if (e.name === 'TokenExpiredError') {
+            return res.status(401).json({ error: 'Token expired' });
+        }
+        return res.status(403).json({ error: 'Invalid token' });
     }
 };
 

@@ -353,7 +353,7 @@ export default function Videos() {
 				const byRes = new Map(initialUrls.map(u => [String(u.resolution), u.url]));
 				setResolutionStatuses(Object.fromEntries(expectedResolutions.map(r => [r, { status: 'processing', url: byRes.get(r) || null, progress: 0 }])));
 				startPollingTranscode();
-				startPollingMeta(videoId);
+				// startPollingMeta(videoId);
 			}
 		} catch (err) {
 			setError(err?.response?.data?.error || 'Upload failed');

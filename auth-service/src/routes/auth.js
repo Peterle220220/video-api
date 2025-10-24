@@ -156,6 +156,51 @@ router.get('/profile', async (req, res) => {
     }
 });
 
+// Verify JWT token endpoint for other services
+router.post('/verify', async (req, res) => {
+    try {
+        const { token } = req.body;
+        if (!token) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Token is required' 
+            });
+        }
+
+        const decoded = await verifyJwt(token);
+        const rawGroups = decoded['cognito:groups'];
+        const groups = Array.isArray(rawGroups)
+            ? rawGroups
+            : (typeof rawGroups === 'string' && rawGroups.length ? [rawGroups] : []);
+
+        return res.json({
+            success: true,
+            user: {
+                id: decoded.sub || 'cognito-user',
+                username: decoded['cognito:username'] || decoded.username || decoded.email || 'user',
+                email: decoded.email,
+                groups,
+                isAdmin: groups.some(g => String(g).toLowerCase() === 'admin')
+            }
+        });
+    } catch (error) {
+        console.error('JWT verification error:', error);
+        
+        // Check if it's a JWT expired error
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({ 
+                success: false, 
+                error: 'Token expired' 
+            });
+        }
+        
+        return res.status(401).json({ 
+            success: false, 
+            error: 'Invalid token' 
+        });
+    }
+});
+
 // Test endpoint (no authentication required)
 router.get('/test', (req, res) => {
     res.json({

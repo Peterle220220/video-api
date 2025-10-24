@@ -4,10 +4,9 @@ const { v4: uuidv4 } = require('uuid');
 const transcodingService = require('../services/transcodingService');
 const { getCurrentCPUUsage, getCPUUsageHistory, getSystemInfo, getMemoryUsage } = require('../utils/cpuMonitor');
 const { authenticateToken } = require('../middleware/auth');
-// const assemblyAI = require('../services/external/assemblyAIService');
 const { listPrefix, presignDownload, buildProcessedKey, buildMetaKey, deletePrefix, headObject, getObjectJson, deleteObject } = require('../services/s3Service');
-const { putVideo, getJob, queryJobsByVideoId, updateJob, listVideos } = require('../services/dynamoService');
-const { listActiveJobs } = require('../services/dynamoService');
+const { putVideo, getJob, listVideos, listActiveJobs } = require('../services/dynamoService');
+
 // Helper function to create initial meta file
 async function createInitialMetaFile(videoId) {
     try {

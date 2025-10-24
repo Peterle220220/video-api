@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const { AWS_REGION, S3_BUCKET, QUT_USERNAME, DDB_TABLE } = require('../config/aws');
-const EnhancedSQSService = require('../../shared/services/enhancedSqsService');
+const EnhancedSQSService = require('../../../shared/services/enhancedSqsService');
 
 class TranscodingWorker {
     constructor() {
