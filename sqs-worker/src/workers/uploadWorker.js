@@ -2,12 +2,14 @@ const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { AWS_REGION, S3_BUCKET, QUT_USERNAME, DDB_TABLE } = require('../config/aws');
+const EnhancedSQSService = require('../../shared/services/enhancedSqsService');
 
 class UploadWorker {
     constructor() {
         this.s3Client = new S3Client({ region: AWS_REGION });
         this.dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({ region: AWS_REGION }));
         this.tableName = DDB_TABLE;
+        this.sqs = new EnhancedSQSService();
     }
 
     async process(messageBody, message) {
@@ -42,12 +44,22 @@ class UploadWorker {
         } catch (error) {
             console.error(`❌ Upload processing failed for video ${messageBody.videoId}:`, error);
             
-            // Update job status to failed
+            // Classify error type for better handling
+            const errorType = this.sqs.classifyError(error);
+            console.log(`🏷️ Error classified as: ${errorType}`);
+            
+            // Update job status to failed with error classification
             await this.updateJobStatus(messageBody.videoId, {
                 upload_status: 'failed',
                 upload_error: error.message,
+                upload_error_type: errorType,
                 upload_failed_at: new Date().toISOString()
             });
+            
+            // For transient errors, we might want to retry
+            if (errorType === 'transient' && retryCount < 2) {
+                console.log(`🔄 Transient error detected, will retry...`);
+            }
             
             throw error;
         }
