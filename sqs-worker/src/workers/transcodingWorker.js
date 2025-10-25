@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const { AWS_REGION, S3_BUCKET, QUT_USERNAME, DDB_TABLE } = require('../config/aws');
-const EnhancedSQSService = require('../../../shared/services/enhancedSqsService');
+const EnhancedSQSService = require('../../shared/services/enhancedSqsService');
 
 class TranscodingWorker {
     constructor() {
@@ -18,6 +18,12 @@ class TranscodingWorker {
 
     async process(messageBody, message) {
         try {
+            // Handle test messages that should intentionally fail
+            if (messageBody.test === true && messageBody.shouldFail === true) {
+                console.log('🧪 Test message detected - intentionally failing for DLQ testing');
+                throw new Error('Test message: intentional failure for DLQ testing');
+            }
+            
             const { videoId, inputSource, resolutions, retryCount = 0 } = messageBody;
             
             console.log(`🎬 Processing transcoding job for video ${videoId}`);

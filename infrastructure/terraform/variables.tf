@@ -97,6 +97,16 @@ variable "image_uri_sqs_worker" {
   type        = string
 }
 
+variable "image_uri_maintenance" {
+  description = "Docker image URI for the maintenance scheduled task."
+  type        = string
+}
+
+variable "image_uri_log_cleanup" {
+  description = "Docker image URI for the log cleanup scheduled task."
+  type        = string
+}
+
 variable "ecs_task_cpu" {
   description = "CPU units to allocate for the ECS tasks."
   type        = number

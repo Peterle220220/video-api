@@ -1,15 +1,15 @@
 import axios from 'axios';
 
-// Auto-detect backend base URL using current host (EC2 IP/domain) with port 3000 by default.
+// Auto-detect backend base URL using current host (EC2 IP/domain).
 // Can be overridden by REACT_APP_API_BASE when needed (e.g., different host/port).
 const { protocol, hostname } = window.location;
-const inferredApiBase = `${protocol}//${hostname}:3000`;
+const inferredApiBase = `${protocol}//${hostname}`;
 const apiBaseUrl = process.env.REACT_APP_API_BASE || inferredApiBase;
 
 // Service-specific base URLs
-const authServiceUrl = process.env.REACT_APP_AUTH_SERVICE_URL || `${protocol}//${hostname}:3001`;
-const transcodingServiceUrl = process.env.REACT_APP_TRANSCODING_SERVICE_URL || `${protocol}//${hostname}:3002`;
-const uploadServiceUrl = process.env.REACT_APP_UPLOAD_SERVICE_URL || `${protocol}//${hostname}:3003`;
+const authServiceUrl = process.env.REACT_APP_AUTH_SERVICE_URL || `${protocol}//${hostname}`;
+const transcodingServiceUrl = process.env.REACT_APP_TRANSCODING_SERVICE_URL || `${protocol}//${hostname}`;
+const uploadServiceUrl = process.env.REACT_APP_UPLOAD_SERVICE_URL || `${protocol}//${hostname}`;
 
 // Main API client (deprecated - use service-specific APIs)
 // export const api = axios.create({
@@ -18,15 +18,15 @@ const uploadServiceUrl = process.env.REACT_APP_UPLOAD_SERVICE_URL || `${protocol
 
 // Service-specific API clients
 export const authApi = axios.create({
-    baseURL: authServiceUrl,
+    baseURL: inferredApiBase,
 });
 
 export const transcodingApi = axios.create({
-    baseURL: transcodingServiceUrl,
+    baseURL: inferredApiBase,
 });
 
 export const uploadApi = axios.create({
-    baseURL: uploadServiceUrl,
+    baseURL: inferredApiBase,
 });
 
 // Common interceptor function

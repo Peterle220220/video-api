@@ -51,14 +51,27 @@ resource "aws_ecs_task_definition" "maintenance" {
 
   container_definitions = jsonencode([
     {
-      name  = "maintenance"
-      image = "alpine:latest"
-      command = [
-        "sh",
-        "-c",
-        "echo 'Starting maintenance tasks...' && sleep 30 && echo 'Maintenance completed'"
-      ]
+      name      = "maintenance"
+      image     = var.image_uri_maintenance
       essential = true
+      environment = [
+        {
+          name  = "AWS_REGION"
+          value = var.region
+        },
+        {
+          name  = "S3_BUCKET_NAME"
+          value = var.existing_s3_bucket
+        },
+        {
+          name  = "DYNAMODB_TABLE_NAME"
+          value = var.existing_dynamodb_table
+        },
+        {
+          name  = "ECS_CLUSTER_NAME"
+          value = aws_ecs_cluster.main.name
+        }
+      ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -122,14 +135,15 @@ resource "aws_ecs_task_definition" "log_cleanup" {
 
   container_definitions = jsonencode([
     {
-      name  = "log-cleanup"
-      image = "alpine:latest"
-      command = [
-        "sh",
-        "-c",
-        "echo 'Starting log cleanup...' && sleep 20 && echo 'Log cleanup completed'"
-      ]
+      name      = "log-cleanup"
+      image     = var.image_uri_log_cleanup
       essential = true
+      environment = [
+        {
+          name  = "AWS_REGION"
+          value = var.region
+        }
+      ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {

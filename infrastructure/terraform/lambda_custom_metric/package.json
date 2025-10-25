@@ -1,0 +1,12 @@
+{
+  "name": "custom-scaling-metric-lambda",
+  "version": "1.0.0",
+  "description": "Lambda function to publish custom CloudWatch metrics for ECS auto-scaling",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.400.0",
+    "@aws-sdk/client-ecs": "^3.400.0",
+    "@aws-sdk/client-cloudwatch": "^3.400.0"
+  }
+}
+

@@ -5,11 +5,12 @@
 # ---------------------------------------------------------------------------------------------------------------------
 
 resource "aws_lb" "main" {
-  name               = "n12122882-alb-terraform"
+  name               = "cab432-a3-n12122882-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [data.aws_security_group.existing.id]
-  subnets            = ["subnet-075811427d5564cf9", "subnet-05a3b8177138c8b14"]
+  subnets            = ["subnet-075811427d5564cf9", "subnet-05a3b8177138c8b14", "subnet-04ca053dcbe5f49cc"]
+  enable_deletion_protection = false
 
   tags = {
     qut-username = var.qut_username
@@ -59,7 +60,7 @@ resource "aws_lb_target_group" "auth" {
 }
 
 resource "aws_lb_target_group" "transcoding" {
-  name        = "n12122882-transcoding-tg"
+  name        = "${var.project_name}-transcoding-tg"
   port        = 3002
   protocol    = "HTTP"
   vpc_id      = data.aws_vpc.default.id

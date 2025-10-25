@@ -201,6 +201,16 @@ router.post('/verify', async (req, res) => {
     }
 });
 
+// Health check endpoint for ALB
+router.get('/health', (req, res) => {
+    res.json({
+        status: 'OK',
+        service: 'auth-service',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
 // Test endpoint (no authentication required)
 router.get('/test', (req, res) => {
     res.json({

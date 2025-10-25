@@ -42,6 +42,16 @@ async function createInitialMetaFile(videoId) {
 
 const router = express.Router();
 
+// Health check endpoint for ALB
+router.get('/health', (req, res) => {
+    res.json({
+        status: 'OK',
+        service: 'transcoding-service',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
 // Start transcoding job: supports either direct multipart upload (legacy) or S3 key input
 router.post('/start', authenticateToken, async (req, res) => {
     try {

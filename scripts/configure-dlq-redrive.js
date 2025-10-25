@@ -1,161 +1,250 @@
 #!/usr/bin/env node
 
 /**
- * Configure DLQ Redrive Policies for Existing SQS Queues
- * This script safely configures existing queues to use DLQ without affecting other projects
+ * Configure DLQ Redrive Policy
+ * This script configures the redrive policy for all main queues to link them with their DLQs
  */
 
 const { SQSClient, SetQueueAttributesCommand, GetQueueAttributesCommand } = require('@aws-sdk/client-sqs');
 
 class DLQRedriveConfigurator {
-    constructor(region = 'ap-southeast-2') {
-        this.client = new SQSClient({ region });
-        this.region = region;
+    constructor() {
+        this.region = 'ap-southeast-2';
+        this.accountId = '901444280953';
+        this.client = new SQSClient({ region: this.region });
+        
+        this.queueConfigs = [
+            {
+                mainQueue: 'transcoding-queue',
+                dlq: 'transcoding-dlq',
+                maxReceiveCount: 3
+            },
+            {
+                mainQueue: 'upload-queue',
+                dlq: 'upload-dlq',
+                maxReceiveCount: 3
+            },
+            {
+                mainQueue: 'storage-queue',
+                dlq: 'storage-dlq',
+                maxReceiveCount: 3
+            },
+            {
+                mainQueue: 'notifications-queue',
+                dlq: 'notifications-dlq',
+                maxReceiveCount: 3
+            }
+        ];
     }
 
     /**
-     * Configure redrive policy for a queue
+     * Get queue ARN from queue name
      */
-    async configureRedrivePolicy(queueName, dlqArn, maxReceiveCount = 3) {
+    getQueueArn(queueName) {
+        return `arn:aws:sqs:${this.region}:${this.accountId}:${queueName}`;
+    }
+
+    /**
+     * Get queue URL from queue name
+     */
+    getQueueUrl(queueName) {
+        return `https://sqs.${this.region}.amazonaws.com/${this.accountId}/${queueName}`;
+    }
+
+    /**
+     * Configure redrive policy for a single queue
+     */
+    async configureRedrivePolicy(mainQueue, dlqName, maxReceiveCount) {
         try {
-            console.log(`🔧 Configuring redrive policy for ${queueName}...`);
+            console.log(`\n🔧 Configuring ${mainQueue}...`);
             
+            const mainQueueUrl = this.getQueueUrl(mainQueue);
+            const dlqArn = this.getQueueArn(dlqName);
+            
+            // Create redrive policy
             const redrivePolicy = {
                 deadLetterTargetArn: dlqArn,
                 maxReceiveCount: maxReceiveCount
             };
-
+            
+            console.log(`   Main Queue: ${mainQueue}`);
+            console.log(`   DLQ: ${dlqName}`);
+            console.log(`   Max Receive Count: ${maxReceiveCount}`);
+            
+            // Set the redrive policy
             const command = new SetQueueAttributesCommand({
-                QueueUrl: `https://sqs.${this.region}.amazonaws.com/901444280953/${queueName}`,
+                QueueUrl: mainQueueUrl,
                 Attributes: {
                     RedrivePolicy: JSON.stringify(redrivePolicy)
                 }
             });
-
+            
             await this.client.send(command);
-            console.log(`✅ Redrive policy configured for ${queueName}`);
+            console.log(`   ✅ Successfully configured redrive policy`);
+            
+            // Verify the configuration
+            await this.verifyConfiguration(mainQueue, dlqName, maxReceiveCount);
             
             return true;
+            
         } catch (error) {
-            console.error(`❌ Error configuring redrive policy for ${queueName}:`, error);
-            throw error;
+            console.error(`   ❌ Error configuring ${mainQueue}:`, error.message);
+            return false;
         }
     }
 
     /**
-     * Check current queue configuration
+     * Verify redrive policy configuration
      */
-    async checkQueueConfiguration(queueName) {
+    async verifyConfiguration(mainQueue, expectedDLQ, expectedMaxReceiveCount) {
         try {
+            const queueUrl = this.getQueueUrl(mainQueue);
+            
             const command = new GetQueueAttributesCommand({
-                QueueUrl: `https://sqs.${this.region}.amazonaws.com/901444280953/${queueName}`,
-                AttributeNames: ['RedrivePolicy', 'VisibilityTimeout', 'MessageRetentionPeriod']
+                QueueUrl: queueUrl,
+                AttributeNames: ['RedrivePolicy']
             });
-
+            
             const result = await this.client.send(command);
-            return result.Attributes;
+            
+            if (result.Attributes?.RedrivePolicy) {
+                const policy = JSON.parse(result.Attributes.RedrivePolicy);
+                const currentDLQ = policy.deadLetterTargetArn.split(':').pop();
+                const currentMaxReceiveCount = policy.maxReceiveCount;
+                
+                const isCorrect = 
+                    currentDLQ === expectedDLQ && 
+                    currentMaxReceiveCount === expectedMaxReceiveCount;
+                
+                if (isCorrect) {
+                    console.log(`   ✅ Verification passed`);
+                } else {
+                    console.log(`   ⚠️  Configuration mismatch:`);
+                    console.log(`      Expected DLQ: ${expectedDLQ}, Got: ${currentDLQ}`);
+                    console.log(`      Expected MaxReceiveCount: ${expectedMaxReceiveCount}, Got: ${currentMaxReceiveCount}`);
+                }
+                
+                return isCorrect;
+            } else {
+                console.log(`   ❌ No redrive policy found after configuration`);
+                return false;
+            }
+            
         } catch (error) {
-            console.error(`❌ Error checking queue configuration for ${queueName}:`, error);
-            throw error;
+            console.error(`   ❌ Error verifying configuration:`, error.message);
+            return false;
         }
     }
 
     /**
-     * Configure all main queues with their respective DLQs
+     * Configure all queues
      */
     async configureAllQueues() {
-        const queueConfigs = [
-            {
-                mainQueue: 'transcoding-queue',
-                dlqName: 'transcoding-dlq',
-                dlqArn: 'arn:aws:sqs:ap-southeast-2:901444280953:transcoding-dlq'
-            },
-            {
-                mainQueue: 'upload-queue',
-                dlqName: 'upload-dlq',
-                dlqArn: 'arn:aws:sqs:ap-southeast-2:901444280953:upload-dlq'
-            },
-            {
-                mainQueue: 'storage-queue',
-                dlqName: 'storage-dlq',
-                dlqArn: 'arn:aws:sqs:ap-southeast-2:901444280953:storage-dlq'
-            },
-            {
-                mainQueue: 'notifications-queue',
-                dlqName: 'notifications-dlq',
-                dlqArn: 'arn:aws:sqs:ap-southeast-2:901444280953:notifications-dlq'
-            }
-        ];
-
-        console.log('🚀 Starting DLQ redrive policy configuration...');
-        console.log('⚠️  This will configure existing queues to use DLQ redrive policies');
-        console.log('⚠️  Make sure DLQ queues have been created first via Terraform');
+        console.log('🚀 Configuring DLQ Redrive Policies for All Queues');
+        console.log('='.repeat(60));
         
-        for (const config of queueConfigs) {
-            try {
-                // Check current configuration
-                console.log(`\n📋 Checking current configuration for ${config.mainQueue}...`);
-                const currentConfig = await this.checkQueueConfiguration(config.mainQueue);
-                
-                if (currentConfig.RedrivePolicy) {
-                    console.log(`⚠️  ${config.mainQueue} already has a redrive policy:`, currentConfig.RedrivePolicy);
-                    console.log(`⏭️  Skipping ${config.mainQueue} to avoid conflicts`);
-                    continue;
-                }
-
-                // Configure redrive policy
-                await this.configureRedrivePolicy(config.mainQueue, config.dlqArn);
-                
-            } catch (error) {
-                console.error(`❌ Failed to configure ${config.mainQueue}:`, error.message);
-                // Continue with other queues
-            }
+        const results = [];
+        
+        for (const config of this.queueConfigs) {
+            const success = await this.configureRedrivePolicy(
+                config.mainQueue,
+                config.dlq,
+                config.maxReceiveCount
+            );
+            results.push({
+                queue: config.mainQueue,
+                success
+            });
         }
-
-        console.log('\n🎉 DLQ redrive policy configuration completed!');
+        
+        // Summary
+        console.log('\n📋 CONFIGURATION SUMMARY');
+        console.log('='.repeat(60));
+        
+        let allSuccess = true;
+        for (const result of results) {
+            const status = result.success ? '✅ SUCCESS' : '❌ FAILED';
+            console.log(`${result.queue}: ${status}`);
+            if (!result.success) allSuccess = false;
+        }
+        
+        console.log('\n' + '='.repeat(60));
+        if (allSuccess) {
+            console.log('🎉 All queues configured successfully!');
+            console.log('\n📝 What this means:');
+            console.log('   - Messages that fail processing will be retried 3 times');
+            console.log('   - After 3 failures, messages will move to DLQ automatically');
+            console.log('   - CloudWatch alarms will trigger when messages appear in DLQ');
+            console.log('\n🧪 Test it by running:');
+            console.log('   node scripts/test-dlq-functionality.js message');
+        } else {
+            console.log('⚠️  Some queues failed to configure');
+            console.log('Please check the errors above and try again');
+        }
+        
+        return results;
     }
 
     /**
-     * Verify DLQ configuration
+     * Show current configuration
      */
-    async verifyConfiguration() {
-        console.log('🔍 Verifying DLQ configuration...');
+    async showCurrentConfiguration() {
+        console.log('📊 Current DLQ Configuration');
+        console.log('='.repeat(60));
         
-        const queues = ['transcoding-queue', 'upload-queue', 'storage-queue', 'notifications-queue'];
-        
-        for (const queueName of queues) {
+        for (const config of this.queueConfigs) {
             try {
-                const config = await this.checkQueueConfiguration(queueName);
+                console.log(`\n🔍 ${config.mainQueue}:`);
                 
-                console.log(`\n📊 ${queueName}:`);
-                console.log(`   Redrive Policy: ${config.RedrivePolicy || 'None'}`);
-                console.log(`   Visibility Timeout: ${config.VisibilityTimeout}s`);
-                console.log(`   Message Retention: ${config.MessageRetentionPeriod}s`);
+                const queueUrl = this.getQueueUrl(config.mainQueue);
+                const command = new GetQueueAttributesCommand({
+                    QueueUrl: queueUrl,
+                    AttributeNames: ['RedrivePolicy']
+                });
+                
+                const result = await this.client.send(command);
+                
+                if (result.Attributes?.RedrivePolicy) {
+                    const policy = JSON.parse(result.Attributes.RedrivePolicy);
+                    const dlqName = policy.deadLetterTargetArn.split(':').pop();
+                    
+                    console.log(`   ✅ Redrive Policy: CONFIGURED`);
+                    console.log(`   DLQ: ${dlqName}`);
+                    console.log(`   Max Receive Count: ${policy.maxReceiveCount}`);
+                } else {
+                    console.log(`   ❌ Redrive Policy: NOT CONFIGURED`);
+                    console.log(`   Expected DLQ: ${config.dlq}`);
+                }
                 
             } catch (error) {
-                console.error(`❌ Error checking ${queueName}:`, error.message);
+                console.error(`   ❌ Error: ${error.message}`);
             }
         }
+        
+        console.log('\n' + '='.repeat(60));
     }
 
     /**
-     * Show help information
+     * Show help
      */
     showHelp() {
-        console.log('\n📋 DLQ Redrive Policy Configuration Tool');
-        console.log('='.repeat(50));
+        console.log('\n📋 DLQ Redrive Policy Configurator');
+        console.log('='.repeat(60));
         console.log('Usage: node scripts/configure-dlq-redrive.js <command>');
         console.log('\nCommands:');
-        console.log('  configure    Configure redrive policies for all queues');
-        console.log('  verify       Verify current configuration');
-        console.log('  help         Show this help message');
-        console.log('\nPrerequisites:');
-        console.log('  1. DLQ queues must be created first via Terraform');
-        console.log('  2. Main queues must exist');
-        console.log('  3. AWS credentials must be configured');
-        console.log('\nExample:');
+        console.log('  configure   Configure redrive policies for all queues');
+        console.log('  show        Show current redrive policy configuration');
+        console.log('  help        Show this help message');
+        console.log('\nExamples:');
         console.log('  node scripts/configure-dlq-redrive.js configure');
-        console.log('  node scripts/configure-dlq-redrive.js verify');
+        console.log('  node scripts/configure-dlq-redrive.js show');
+        console.log('\nWhat is a Redrive Policy?');
+        console.log('  A redrive policy defines:');
+        console.log('  - Which DLQ to send failed messages to');
+        console.log('  - How many times to retry before sending to DLQ (maxReceiveCount)');
+        console.log('\nDefault Configuration:');
+        console.log('  - Max Receive Count: 3 retries');
+        console.log('  - DLQ Retention: 14 days');
     }
 }
 
@@ -170,8 +259,8 @@ async function main() {
                 await configurator.configureAllQueues();
                 break;
                 
-            case 'verify':
-                await configurator.verifyConfiguration();
+            case 'show':
+                await configurator.showCurrentConfiguration();
                 break;
                 
             case 'help':

@@ -58,24 +58,8 @@ resource "aws_s3_bucket_public_access_block" "webapp_public_access_block" {
   restrict_public_buckets = false
 }
 
-# Policy to allow CloudFront to access the webapp S3 bucket
-# This uses an Origin Access Identity to ensure the bucket is only accessible via CloudFront
-resource "aws_s3_bucket_policy" "webapp_policy" {
-  bucket = aws_s3_bucket.webapp.id
-  policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [
-      {
-        Sid       = "AllowCloudFront"
-        Effect    = "Allow",
-        Principal = {
-          AWS = aws_cloudfront_origin_access_identity.default.iam_arn
-        },
-        Action   = "s3:GetObject",
-        Resource = "${aws_s3_bucket.webapp.arn}/*"
-      }
-    ]
-  })
-}
+# Note: CloudFront uses ALB as origin (not S3 directly)
+# Therefore no special S3 bucket policy needed for CloudFront access
+# The webapp bucket is currently not in active use as content is served via ECS containers
 
 

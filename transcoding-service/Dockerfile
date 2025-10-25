@@ -12,7 +12,7 @@ COPY package.json ./
 RUN npm install --only=production
 
 # Copy source code
-COPY ./transcoding-service/ .
+COPY . .
 
 # Note: Shared middleware is mounted as volume in docker-compose.yml
 

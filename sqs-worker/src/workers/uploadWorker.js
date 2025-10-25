@@ -2,7 +2,7 @@ const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
 const { AWS_REGION, S3_BUCKET, QUT_USERNAME, DDB_TABLE } = require('../config/aws');
-const EnhancedSQSService = require('../../../shared/services/enhancedSqsService');
+const EnhancedSQSService = require('../../shared/services/enhancedSqsService');
 
 class UploadWorker {
     constructor() {
@@ -14,6 +14,12 @@ class UploadWorker {
 
     async process(messageBody, message) {
         try {
+            // Handle test messages that should intentionally fail
+            if (messageBody.test === true && messageBody.shouldFail === true) {
+                console.log('🧪 Test message detected - intentionally failing for DLQ testing');
+                throw new Error('Test message: intentional failure for DLQ testing');
+            }
+            
             const { videoId, s3Key, filename, retryCount = 0 } = messageBody;
             
             console.log(`📁 Processing upload job for video ${videoId}`);

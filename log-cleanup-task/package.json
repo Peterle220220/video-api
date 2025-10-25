@@ -1,0 +1,15 @@
+{
+  "name": "log-cleanup-task",
+  "version": "1.0.0",
+  "description": "Weekly log cleanup task for CloudWatch logs",
+  "main": "src/cleanup.js",
+  "scripts": {
+    "start": "node src/cleanup.js"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1691.0"
+  },
+  "author": "",
+  "license": "ISC"
+}
+

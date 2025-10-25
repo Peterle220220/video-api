@@ -45,6 +45,16 @@ async function createInitialMetaFile(videoId) {
 
 const router = express.Router();
 
+// Health check endpoint for ALB
+router.get('/health', (req, res) => {
+    res.json({
+        status: 'OK',
+        service: 'upload-service',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
 // Generate presigned URL for file upload
 router.post('/presign-upload', authenticateToken, async (req, res) => {
     try {
