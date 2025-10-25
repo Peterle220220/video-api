@@ -52,14 +52,35 @@ resource "aws_s3_bucket_website_configuration" "webapp_config" {
 resource "aws_s3_bucket_public_access_block" "webapp_public_access_block" {
   bucket = aws_s3_bucket.webapp.id
 
-  block_public_acls       = false
+  block_public_acls       = true
   block_public_policy     = false
-  ignore_public_acls      = false
+  ignore_public_acls      = true
   restrict_public_buckets = false
 }
 
-# Note: CloudFront uses ALB as origin (not S3 directly)
-# Therefore no special S3 bucket policy needed for CloudFront access
-# The webapp bucket is currently not in active use as content is served via ECS containers
+# S3 Bucket Policy - Allow CloudFront OAI to read objects
+# This enables CloudFront to serve static files from S3
+resource "aws_s3_bucket_policy" "webapp_policy" {
+  bucket = aws_s3_bucket.webapp.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowCloudFrontOAI"
+        Effect = "Allow"
+        Principal = {
+          AWS = aws_cloudfront_origin_access_identity.webapp_oai.iam_arn
+        }
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.webapp.arn}/*"
+      }
+    ]
+  })
+
+  depends_on = [
+    aws_s3_bucket_public_access_block.webapp_public_access_block
+  ]
+}
 
 

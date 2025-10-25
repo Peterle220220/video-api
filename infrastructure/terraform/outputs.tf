@@ -8,9 +8,19 @@ output "application_url" {
   value       = "https://${var.domain_name}"
 }
 
+output "cloudfront_url" {
+  description = "The CloudFront URL for accessing the application with edge caching."
+  value       = "https://${aws_cloudfront_distribution.main.domain_name}"
+}
+
 output "alb_dns_name" {
   description = "The DNS name of the Application Load Balancer."
   value       = aws_lb.main.dns_name
+}
+
+output "s3_webapp_bucket" {
+  description = "The S3 bucket name for static webapp files."
+  value       = aws_s3_bucket.webapp.id
 }
 
 # output "ecr_repository_urls" {
